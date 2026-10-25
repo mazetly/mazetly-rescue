@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -84,13 +85,18 @@ func TestHostPath(t *testing.T) {
 
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
-		"no app":         strings.Replace(config, "app: demo", "", 1),
-		"unknown engine": strings.Replace(config, "engine: mariadb", "engine: oracle", 1),
-		"unknown phase":  strings.Replace(config, "post_restore:\n          - echo", "after_restore:\n          - echo", 1),
-		"sqlite unbound": strings.Replace(config, "path: /app/data/app.db", "path: /elsewhere/app.db", 1),
-		"bad version":    strings.Replace(config, "label: org", "run: x\n    label: org", 1),
+		"no app":          strings.Replace(config, "app: demo", "", 1),
+		"unknown engine":  strings.Replace(config, "engine: mariadb", "engine: oracle", 1),
+		"unknown phase":   strings.Replace(config, "post_restore:\n          - echo", "after_restore:\n          - echo", 1),
+		"sqlite unbound":  strings.Replace(config, "path: /app/data/app.db", "path: /elsewhere/app.db", 1),
+		"bad version":     strings.Replace(config, "label: org", "run: x\n    label: org", 1),
+		"empty version":   strings.Replace(config, "    label: org.opencontainers.image.version\n", "", 1),
+		"version service": strings.Replace(config, "    service: app\n", "    service: nope\n", 1),
 	}
 	for name, c := range cases {
+		if c == config {
+			t.Fatalf("%s: the replacement did not apply", name)
+		}
 		if _, err := Parse("/srv/kit", []byte(c)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
@@ -125,6 +131,9 @@ func TestUnsafe(t *testing.T) {
 		"privileged":     "    privileged: true\n",
 		"host network":   "    network_mode: host\n",
 		"host pid":       "    pid: host\n",
+		"host ipc":       "    ipc: host\n",
+		"host userns":    "    userns_mode: host\n",
+		"no selinux":     "    security_opt: [label=disable]\n",
 		"capabilities":   "    cap_add: [SYS_ADMIN]\n",
 		"devices":        "    devices: [/dev/sda:/dev/sda]\n",
 		"no apparmor":    "    security_opt: [apparmor=unconfined]\n",
@@ -150,5 +159,19 @@ func TestUnsafe(t *testing.T) {
 	secret := config + "secrets:\n  key:\n    file: /root/.ssh/id_ed25519\n"
 	if p, _ := Parse("/srv/kit", []byte(secret)); len(p.Unsafe()) == 0 {
 		t.Error("a secret read from /root: not flagged")
+	}
+}
+
+func TestUnsafeOrderIsStable(t *testing.T) {
+	c := strings.Replace(config, "  db:\n    image: mariadb:11.4\n", "  db:\n    image: mariadb:11.4\n    network_mode: host\n    pid: host\n    ipc: host\n", 1)
+	p, err := Parse("/srv/kit", []byte(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"db uses the host's network_mode", "db uses the host's pid", "db uses the host's ipc"}
+	for range 20 {
+		if got := p.Unsafe(); !slices.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
 	}
 }

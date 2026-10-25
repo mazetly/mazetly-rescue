@@ -37,91 +37,26 @@ type RestoreOptions struct {
 // steps of RESTORE.md. Nothing from the kit runs before it has been checked,
 // shown and accepted: whoever can write to the repository writes the kit.
 func Restore(repo restic.Repo, target string, opts RestoreOptions) error {
-	target, err := filepath.Abs(target)
+	target, err := prepareTarget(target)
 	if err != nil {
 		return err
 	}
-	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
-		return errors.New(i18n.T("restore.notempty", target))
-	}
-	if err := os.MkdirAll(target, 0o700); err != nil {
-		return err
-	}
-	s, err := pickSnapshot(repo, opts.Snapshot)
+	m, err := fetchKit(repo, target, opts.Snapshot)
 	if err != nil {
 		return err
 	}
-
-	step(i18n.T("restore.snapshot", s.Time.Local().Format("2006-01-02 15:04"), s.Hostname, s.ShortID))
-	if err := repo.Restore(s, target); err != nil {
+	if err := verifyExports(target, m); err != nil {
 		return err
 	}
-	// Secrets and database exports in clear: for root only, whatever the
-	// owners and modes the backup recorded.
-	if err := docker.AsRoot([]string{target + ":/kit"}, `chmod 600 /kit/.env 2>/dev/null; chmod -R go= /kit/db`); err != nil {
-		return err
-	}
-	m, err := readManifest(target)
+	p, err := loadPinned(target, m, opts.Isolated)
 	if err != nil {
-		return err
-	}
-
-	step(i18n.T("restore.verify"))
-	for _, e := range m.Databases {
-		sum, err := fileSHA256(filepath.Join(target, e.File))
-		if err != nil {
-			return err
-		}
-		if sum != e.SHA256 {
-			return errors.New(i18n.T("check.mismatch", e.File))
-		}
-		fmt.Println(e.File + ": OK")
-	}
-
-	p, err := compose.Load(target)
-	if err != nil {
-		return err
-	}
-	current := map[string]string{}
-	for name, s := range p.Services {
-		current[name] = s.Image
-	}
-	if err := pinImages(filepath.Join(target, "compose.yaml"), current, m.Images); err != nil {
-		return err
-	}
-	if opts.Isolated {
-		if err := isolate(p); err != nil {
-			return err
-		}
-	}
-	if p, err = compose.Load(target); err != nil {
 		return err
 	}
 	if err := review(p, m, opts); err != nil {
 		return err
 	}
-
-	for _, db := range p.Databases() {
-		step(i18n.T("restore.import", db.Service, db.Engine))
-		if err := importDB(p, db); err != nil {
-			return err
-		}
-	}
-	step(i18n.T("restore.start"))
-	if err := docker.Run(docker.Compose(target, "up", "-d", "--wait", "--wait-timeout", "600")); err != nil {
+	if err := startKit(p, m); err != nil {
 		return err
-	}
-	step(i18n.T("backup.hooks", "post_restore"))
-	if err := runHooks(p, "post_restore"); err != nil {
-		return err
-	}
-	// The point of pinning: what runs now is exactly what was backed up.
-	running, err := appVersion(p)
-	if err != nil {
-		return err
-	}
-	if running != m.AppVersion {
-		return errors.New(i18n.T("restore.version", running, m.AppVersion))
 	}
 	// The exports are in the databases now, and in the backup: no clear copy
 	// is left behind.
@@ -136,24 +71,109 @@ func Restore(repo restic.Repo, target string, opts RestoreOptions) error {
 	return nil
 }
 
+// prepareTarget makes target absolute and creates it; it must be empty.
+func prepareTarget(target string) (string, error) {
+	target, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
+		return "", errors.New(i18n.T("restore.notempty", target))
+	}
+	return target, os.MkdirAll(target, 0o700)
+}
+
+// fetchKit restores the kit of a snapshot into target and reads its manifest.
+func fetchKit(repo restic.Repo, target, snapshot string) (*Manifest, error) {
+	s, err := pickSnapshot(repo, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	step(i18n.T("restore.snapshot", s.Time.Local().Format("2006-01-02 15:04"), s.Hostname, s.ShortID))
+	if err := repo.Restore(s, target); err != nil {
+		return nil, err
+	}
+	// Secrets and database exports in clear: for root only, whatever the
+	// owners and modes the backup recorded.
+	if err := docker.AsRoot([]string{target + ":/kit"}, `chmod 600 /kit/.env 2>/dev/null; chmod -R go= /kit/db`); err != nil {
+		return nil, err
+	}
+	return readManifest(target)
+}
+
+// verifyExports checks the database exports against the manifest's checksums.
+func verifyExports(target string, m *Manifest) error {
+	step(i18n.T("restore.verify"))
+	for _, e := range m.Databases {
+		sum, err := fileSHA256(filepath.Join(target, e.File))
+		if err != nil {
+			return err
+		}
+		if sum != e.SHA256 {
+			return errors.New(i18n.T("check.mismatch", e.File))
+		}
+		fmt.Println(e.File + ": OK")
+	}
+	return nil
+}
+
+// loadPinned pins the kit's images to the digests the manifest recorded,
+// isolates it when asked, and loads the result.
+func loadPinned(target string, m *Manifest, isolated bool) (*compose.Project, error) {
+	p, err := compose.Load(target)
+	if err != nil {
+		return nil, err
+	}
+	current := map[string]string{}
+	for name, s := range p.Services {
+		current[name] = s.Image
+	}
+	if err := pinImages(filepath.Join(target, "compose.yaml"), current, m.Images); err != nil {
+		return nil, err
+	}
+	if isolated {
+		if err := isolate(p); err != nil {
+			return nil, err
+		}
+	}
+	return compose.Load(target)
+}
+
+// startKit imports the databases, starts the application, runs its post_restore
+// hooks and checks it runs the backed-up version.
+func startKit(p *compose.Project, m *Manifest) error {
+	for _, db := range p.Databases() {
+		step(i18n.T("restore.import", db.Service, db.Engine))
+		if err := importDB(p, db); err != nil {
+			return err
+		}
+	}
+	step(i18n.T("restore.start"))
+	if err := docker.Run(docker.Compose(p.Dir, "up", "-d", "--wait", "--wait-timeout", "600")); err != nil {
+		return err
+	}
+	step(i18n.T("backup.hooks", "post_restore"))
+	if err := runHooks(p, "post_restore"); err != nil {
+		return err
+	}
+	// The point of pinning: what runs now is exactly what was backed up.
+	running, err := appVersion(p)
+	if err != nil {
+		return err
+	}
+	if running != m.AppVersion {
+		return errors.New(i18n.T("restore.version", running, m.AppVersion))
+	}
+	return nil
+}
+
 // review shows what the kit is about to run and asks before running it. A kit
 // reaching beyond its directory is refused unless explicitly allowed.
 func review(p *compose.Project, m *Manifest, opts RestoreOptions) error {
 	step(i18n.T("restore.review"))
 	fmt.Printf("%s %s\n", m.App, m.AppVersion)
 	for _, name := range p.ServiceNames() {
-		s := p.Services[name]
-		var ports []string
-		for _, port := range s.Ports {
-			if port.Published != "" {
-				ports = append(ports, fmt.Sprintf("%s->%d", port.Published, port.Target))
-			}
-		}
-		line := fmt.Sprintf("  %s: %s", name, s.Image)
-		if len(ports) > 0 {
-			line += "  [" + strings.Join(ports, ", ") + "]"
-		}
-		fmt.Println(line)
+		fmt.Println(serviceLine(name, p.Services[name]))
 	}
 	for _, h := range p.Hooks("post_restore") {
 		fmt.Printf("  %s %s: %s\n", i18n.T("restore.hook"), h.Service, h.Run)
@@ -170,6 +190,26 @@ func review(p *compose.Project, m *Manifest, opts RestoreOptions) error {
 	if opts.Yes {
 		return nil
 	}
+	return confirm()
+}
+
+// serviceLine is a service as review shows it: image and published ports.
+func serviceLine(name string, s compose.Service) string {
+	var ports []string
+	for _, port := range s.Ports {
+		if port.Published != "" {
+			ports = append(ports, fmt.Sprintf("%s->%d", port.Published, port.Target))
+		}
+	}
+	line := fmt.Sprintf("  %s: %s", name, s.Image)
+	if len(ports) > 0 {
+		line += "  [" + strings.Join(ports, ", ") + "]"
+	}
+	return line
+}
+
+// confirm asks on the terminal; without one, the caller must pass --yes.
+func confirm() error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return errors.New(i18n.T("restore.needyes"))
 	}
