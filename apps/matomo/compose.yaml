@@ -4,7 +4,7 @@
 # plugins, so third-party plugins are placed in their own directory instead.
 services:
   db:
-    image: mariadb:11.4
+    image: mariadb:13.0
     restart: unless-stopped
     env_file: .env
     healthcheck:
