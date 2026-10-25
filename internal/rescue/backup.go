@@ -65,44 +65,22 @@ func Backup(repo restic.Repo, dir string) (err error) {
 	if err := protectSecrets(dir); err != nil {
 		return err
 	}
-	// Database exports are secrets in clear: they exist only for the time of
-	// the backup, readable by the tool's user only.
-	exports := filepath.Join(dir, "db")
-	if err := os.MkdirAll(exports, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(exports, 0o700); err != nil {
+	exports, err := makeExportsDir(dir)
+	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(exports)
-	var excludes []string
-	for _, db := range p.Databases() {
-		step(i18n.T("backup.export", db.Service, db.Engine))
-		export, err := exportDB(p, db)
-		if err != nil {
-			return err
-		}
-		m.Databases = append(m.Databases, export)
-		if db.Engine == "sqlite" {
-			// The live file is replaced by its consistent copy in db/.
-			live, _ := p.HostPath(db.Service, db.Path)
-			excludes = append(excludes, live, live+"-wal", live+"-shm", live+"-journal")
-		}
+	excludes, err := exportDatabases(p, m)
+	if err != nil {
+		return err
 	}
-	for _, name := range p.ServiceNames() {
-		image, err := runningImage(p, name)
-		if err != nil {
-			return err
-		}
-		m.Images[name] = image
+	if err := recordImages(p, m); err != nil {
+		return err
 	}
 	if m.AppVersion, err = appVersion(p); err != nil {
 		return err
 	}
-	if err := writeManifest(dir, m); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "RESTORE.md"), kit.Restore, 0o644); err != nil {
+	if err := writeKitFiles(dir, m); err != nil {
 		return err
 	}
 
@@ -112,6 +90,56 @@ func Backup(repo restic.Repo, dir string) (err error) {
 	}
 	fmt.Println(i18n.T("backup.done", p.App, m.AppVersion))
 	return nil
+}
+
+// makeExportsDir creates db/ in dir. Database exports are secrets in clear:
+// they exist only for the time of the backup, readable by the tool's user only.
+func makeExportsDir(dir string) (string, error) {
+	exports := filepath.Join(dir, "db")
+	if err := os.MkdirAll(exports, 0o700); err != nil {
+		return "", err
+	}
+	return exports, os.Chmod(exports, 0o700)
+}
+
+// exportDatabases exports every database into db/ and records it in m. It
+// returns the live SQLite files, which the backup leaves out.
+func exportDatabases(p *compose.Project, m *Manifest) ([]string, error) {
+	var excludes []string
+	for _, db := range p.Databases() {
+		step(i18n.T("backup.export", db.Service, db.Engine))
+		export, err := exportDB(p, db)
+		if err != nil {
+			return nil, err
+		}
+		m.Databases = append(m.Databases, export)
+		if db.Engine == "sqlite" {
+			// The live file is replaced by its consistent copy in db/.
+			live, _ := p.HostPath(db.Service, db.Path)
+			excludes = append(excludes, live, live+"-wal", live+"-shm", live+"-journal")
+		}
+	}
+	return excludes, nil
+}
+
+// recordImages records in m the digest each service runs.
+func recordImages(p *compose.Project, m *Manifest) error {
+	for _, name := range p.ServiceNames() {
+		image, err := runningImage(p, name)
+		if err != nil {
+			return err
+		}
+		m.Images[name] = image
+	}
+	return nil
+}
+
+// writeKitFiles writes manifest.json and RESTORE.md next to compose.yaml.
+func writeKitFiles(dir string, m *Manifest) error {
+	if err := writeManifest(dir, m); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "RESTORE.md"), kit.Restore, 0o644)
 }
 
 func exportDB(p *compose.Project, db compose.DB) (Export, error) {
