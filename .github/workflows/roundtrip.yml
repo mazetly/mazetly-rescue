@@ -1,6 +1,7 @@
-# Public proof: for every application, a reference instance is backed up on one
-# machine, then restored on a fresh one with the customer key only, checked,
-# and upgraded.
+# Public proof: for every application, a reference instance is backed up with
+# mazetly-rescue on one machine, then restored on fresh machines with the
+# customer key only, once by hand following RESTORE.md (then upgraded) and once
+# with mazetly-rescue.
 name: Round trip
 on:
   push:
@@ -23,18 +24,23 @@ jobs:
       matrix:
         app: [matomo, gatecha, uptime-kuma, healthchecks, activepieces, nextcloud]
     steps:
-      - uses: actions/checkout@v5
-      - run: test/roundtrip.sh ${{ matrix.app }} backup "$RUNNER_TEMP/instance" "$RUNNER_TEMP/repo"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: CGO_ENABLED=0 go build -o bin/mazetly-rescue ./cmd/mazetly-rescue
+      - run: test/roundtrip.sh ${{ matrix.app }} seed "$RUNNER_TEMP/instance/kit"
+      - run: test/roundtrip.sh ${{ matrix.app }} backup "$RUNNER_TEMP/instance/kit" "$RUNNER_TEMP/repo"
         env:
-          RESTIC_MAZETLY_PASSWORD: rescue-ci-mazetly
-      - uses: actions/upload-artifact@v4
+          RESTIC_PASSWORD: rescue-ci-mazetly
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: restic-${{ matrix.app }}
           path: ${{ runner.temp }}/repo
           retention-days: 1
 
   restore:
-    name: Restore ${{ matrix.app }} on a fresh machine
+    name: Restore ${{ matrix.app }} (${{ matrix.method }})
     needs: backup
     # One application's failed backup must not hide the others' restores.
     if: ${{ !cancelled() }}
@@ -43,10 +49,17 @@ jobs:
       fail-fast: false
       matrix:
         app: [matomo, gatecha, uptime-kuma, healthchecks, activepieces, nextcloud]
+        method: [manual, tool]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.method == 'tool'
+        with:
+          go-version-file: go.mod
+      - if: matrix.method == 'tool'
+        run: CGO_ENABLED=0 go build -o bin/mazetly-rescue ./cmd/mazetly-rescue
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: restic-${{ matrix.app }}
           path: ${{ runner.temp }}/repo
-      - run: test/roundtrip.sh ${{ matrix.app }} restore "$RUNNER_TEMP/restore" "$RUNNER_TEMP/repo"
+      - run: test/roundtrip.sh ${{ matrix.app }} restore-${{ matrix.method }} "$RUNNER_TEMP/restore/kit" "$RUNNER_TEMP/repo"

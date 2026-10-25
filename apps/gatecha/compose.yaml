@@ -10,9 +10,19 @@ services:
       GATECHA_DB_DSN: /app/data/gatecha.db
     ports:
       - "${RESCUE_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/healthz"]
+      interval: 5s
+      retries: 120
     volumes:
       - ./volumes/data:/app/data
     x-mazetly:
       database:
         engine: sqlite
         path: /app/data/gatecha.db
+
+x-mazetly:
+  app: gatecha
+  version:
+    service: gatecha
+    label: org.opencontainers.image.version

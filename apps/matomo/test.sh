@@ -27,8 +27,6 @@ sql() {
 	compose exec -T db sh -c 'exec mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "$0"' "$1"
 }
 
-version() { compose exec -T app php console core:version | tr -d '\r'; }
-
 # Drives the web installer: Matomo has no console installer.
 seed() {
 	local jar=$work/cookies p=$base/index.php password

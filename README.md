@@ -15,15 +15,30 @@ You need:
 
 - your backup (in Mazetly's storage, or in your own S3 bucket);
 - the restore key you were given at onboarding;
-- a blank Debian server.
+- a Linux server with Docker.
+
+## Usage
+
+```sh
+export RESTIC_REPOSITORY=s3:https://s3.fr-par.scw.cloud/my-bucket/my-app
+export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
+mazetly-rescue check                      # does my key open my backups?
+mazetly-rescue restore --target /srv/app  # bring the application back
+```
+
+The key is asked for when not given in `RESTIC_PASSWORD` or
+`--password-file`. Without the tool, [`kit/RESTORE.md`](kit/RESTORE.md) is the
+same procedure by hand.
 
 ## Status
 
-Under design. The backup format is described in [SPEC.md](SPEC.md).
+Version 0: the format, described in [SPEC.md](SPEC.md), and the tool may still
+change. No release yet; build the tool with
+`go build -o mazetly-rescue ./cmd/mazetly-rescue`.
 
 Each application's recipe is tested end to end in CI: backed up, restored on a
-fresh machine with the customer key only, checked, then upgraded. The tool that
-will do this for you is next.
+fresh machine with the customer key only (by hand and with the tool), checked,
+then upgraded.
 
 | Application | Database | Recipe |
 |---|---|---|

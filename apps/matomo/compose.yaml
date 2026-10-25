@@ -28,6 +28,10 @@ services:
         condition: service_healthy
     ports:
       - "${RESCUE_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -o /dev/null http://localhost/index.php"]
+      interval: 5s
+      retries: 120
     volumes:
       - ./volumes/config/config.ini.php:/var/www/html/config/config.ini.php
       - ./volumes/plugins:/var/www/html/extra-plugins
@@ -46,3 +50,9 @@ services:
 
 volumes:
   db-data:
+
+x-mazetly:
+  app: matomo
+  version:
+    service: app
+    run: php console core:version

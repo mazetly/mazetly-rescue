@@ -11,8 +11,6 @@ prepare() {
 	echo "RESCUE_TEST_PASSWORD=$(openssl rand -hex 16)" >"$kit/.env"
 }
 
-version() { compose exec -T kuma node -p 'require("./package.json").version' | tr -d '\r'; }
-
 socket() {
 	docker run --rm --network host -v "$ROOT/apps/uptime-kuma/seed.py":/seed.py:ro "$PYTHON_IMAGE" \
 		sh -c 'pip install -q --root-user-action=ignore "python-socketio[client]==5.17.0" && python /seed.py "$@"' \

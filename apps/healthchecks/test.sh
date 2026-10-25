@@ -19,8 +19,6 @@ prepare() {
 
 django() { compose exec -T web ./manage.py shell -v 0 -c "$1" | tr -d '\r'; }
 
-version() { django 'from django.conf import settings; print(settings.VERSION)'; }
-
 seed() {
 	django '
 import os

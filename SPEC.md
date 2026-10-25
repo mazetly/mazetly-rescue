@@ -8,7 +8,7 @@ only a convenient way to follow this procedure, not a requirement for following 
 
 ## Principles
 
-1. **The kit is self-sufficient.** With a server, Docker, restic, zstd and jq, a competent
+1. **The kit is self-sufficient.** With a server, Docker, restic and jq, a competent
    person must be able to restore the application by reading `RESTORE.md`, without
    the tool, without an account, without any Mazetly API.
 2. **The kit is the backup.** Mazetly has no other internal format. Every restore
@@ -79,8 +79,8 @@ kit/
 ├── compose.yaml   the recipe: services, mounts and x-mazetly fields,
 │                  images pinned by digest
 ├── .env           settings and secrets
-├── db/            one export per database (<service>.sql.zst or
-│                  <service>.sqlite.zst)
+├── db/            one export per database (<service>.sql or
+│                  <service>.sqlite)
 ├── volumes/       what a user can change, mounted from here
 ├── manifest.json  what the backup produced (see below)
 ├── RESTORE.md     the generic procedure
@@ -90,7 +90,9 @@ kit/
 `.env` holds secrets in clear text **inside** the snapshot: restic encrypts the
 whole, so there is no second encryption layer to manage. Live database files
 under `volumes/` (SQLite and its `-wal`/`-shm`) are excluded: `db/` holds their
-consistent copy.
+consistent copy. Exports are not compressed: restic compresses and deduplicates,
+and a plain SQL dump that barely changed from one day to the next costs almost
+nothing to store again, where a compressed one would be new data every time.
 
 ## Recipes: `x-mazetly` in `compose.yaml`
 
@@ -114,6 +116,12 @@ what a backup needs. Docker ignores them: the file runs as is with
 - **`x-mazetly.upgrade.renew_anon_volumes`**: the image copies its code into an
   anonymous volume once only, so a new image needs
   `docker compose up --renew-anon-volumes`.
+- **`x-mazetly` at the top level**: `app`, the application's name, and
+  `version`, how to read the running version: `{service, run}` (a command's
+  output) or `{service, label}` (a label of the image).
+- **Healthchecks**: every service that takes time to be ready declares a
+  Compose `healthcheck`, so `docker compose up --wait` returns only once the
+  application answers.
 
 What no field can say (adjusting for a new domain, an application's quirks)
 goes in plain text in `NOTES.md`.
@@ -138,7 +146,7 @@ What the backup produced; everything else is in `compose.yaml`.
     "db": "mariadb@sha256:…"
   },
   "databases": [
-    { "service": "db", "engine": "mariadb", "file": "db/db.sql.zst", "sha256": "…" }
+    { "service": "db", "engine": "mariadb", "file": "db/db.sql", "sha256": "…" }
   ]
 }
 ```
@@ -176,7 +184,8 @@ What they taught the format:
 ## Target environment
 
 Blank Debian 13, root access, at least 2 GB of RAM (4 GB for Nextcloud).
-The tool installs Docker and restic from their official sources if needed.
+The tool needs Docker, nothing else: restic and SQLite run from their official
+images, pinned by digest.
 
 ## Out of scope for the tool
 
@@ -189,14 +198,22 @@ The tool installs Docker and restic from their official sources if needed.
 - **Backup: restic**, for its multiple keys and documented format.
 - **Recipes: `x-mazetly` fields in `compose.yaml`**, not a separate file that
   would have to be kept in step with it.
-- **Tool: Go binary**, a single file for Linux amd64 and arm64. restic is not a
-  library (its code lives in `internal/`): the tool calls the official restic
-  binary, downloading and verifying it (SHA-256 checksum and signature) if missing.
+- **Tool: Go binary**, a single file for Linux amd64 and arm64, with two
+  dependencies (`gopkg.in/yaml.v3`, `golang.org/x/term`). restic is not a library
+  (its code lives in `internal/`): the tool runs the official restic image,
+  pinned by digest, so a server needs Docker and nothing else.
   `docker compose config --format json` drops `x-*` fields; the tool reads the
-  YAML output, or uses `compose-go` directly.
+  YAML output.
+- **Commands**: `restore` (the steps of `RESTORE.md`), `check` (the key opens
+  the repository and the latest exports read back intact; `--max-age` for
+  monitoring), `backup` (Mazetly's side) and `init` (a repository with a
+  customer key).
 - **Languages: English and French.** English is the reference for the
   specification (`SPEC.md`); French is its translation (`SPEC.fr.md`). The tool
   speaks the system language (`LANG`), English by default; `RESTORE.md` is written
   in the customer's language.
-- **Public proof**: the [Round trip](.github/workflows/roundtrip.yml) CI runs the
-  table above on every change and every week.
+- **Public proof**: the [Round trip](.github/workflows/roundtrip.yml) CI backs
+  every application up with `mazetly-rescue backup`, then restores it twice on
+  fresh machines with the customer key only: by hand following `RESTORE.md`
+  (then upgrades it), and with `mazetly-rescue restore`. On every change and
+  every week.

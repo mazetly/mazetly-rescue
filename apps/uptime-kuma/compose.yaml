@@ -14,3 +14,9 @@ services:
       database:
         engine: sqlite
         path: /app/data/kuma.db
+
+x-mazetly:
+  app: uptime-kuma
+  version:
+    service: kuma
+    run: node -p 'require("./package.json").version'

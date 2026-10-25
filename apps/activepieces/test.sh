@@ -19,8 +19,6 @@ prepare() {
 	EOF
 }
 
-version() { curl -fs "$base/api/v1/flags" | jq -r .CURRENT_VERSION; }
-
 credentials() {
 	jq -n --arg p "$(grep RESCUE_TEST_PASSWORD= "$kit/.env" | cut -d= -f2)" \
 		'{email: "ci@example.org", password: $p, firstName: "Rescue", lastName: "CI", trackEvents: false, newsLetter: false}'

@@ -34,3 +34,9 @@ services:
 
 volumes:
   db-data:
+
+x-mazetly:
+  app: healthchecks
+  version:
+    service: web
+    run: ./manage.py shell -v 0 -c 'from django.conf import settings; print(settings.VERSION)'

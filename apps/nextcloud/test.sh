@@ -23,8 +23,6 @@ occ() { compose exec -T -u www-data app php occ "$@"; }
 
 password() { grep RESCUE_TEST_PASSWORD= "$kit/.env" | cut -d= -f2; }
 
-version() { occ status --output=json | jq -r .versionstring; }
-
 seed() {
 	occ maintenance:install --database mysql --database-host db \
 		--database-name nextcloud --database-user nextcloud \

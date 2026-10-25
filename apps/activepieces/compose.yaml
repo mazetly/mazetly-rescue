@@ -48,3 +48,9 @@ services:
 
 volumes:
   postgres-data:
+
+x-mazetly:
+  app: activepieces
+  version:
+    service: app
+    run: node -e 'fetch("http://localhost/api/v1/flags").then(r => r.json()).then(f => console.log(f.CURRENT_VERSION))'

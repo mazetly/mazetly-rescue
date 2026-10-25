@@ -6,7 +6,7 @@ UPGRADE=(gatecha=ghcr.io/upellift99/gatecha:0.13.0)
 
 # What the restore must find again, written next to the kit's data at seed
 # time. Test-only: a real kit has no such file.
-EXPECT=$work/kit/volumes/rescue-test.json
+EXPECT=$kit/volumes/rescue-test.json
 
 prepare() {
 	mkdir -p "$kit/volumes/data"
@@ -22,8 +22,6 @@ login() {
 		-d "{\"username\":\"admin\",\"password\":\"$(grep GATECHA_ADMIN_PASSWORD= "$kit/.env" | cut -d= -f2)\"}" |
 		jq -r .token
 }
-
-version() { curl -fs "$base/api/admin/version" -H "Authorization: Bearer $(login)" | jq -r .version; }
 
 seed() {
 	local token key

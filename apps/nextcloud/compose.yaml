@@ -32,6 +32,10 @@ services:
         condition: service_healthy
     ports:
       - "${RESCUE_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -o /dev/null http://localhost/status.php"]
+      interval: 5s
+      retries: 120
     volumes:
       - ./volumes/config:/var/www/html/config
       - ./volumes/data:/var/www/html/data
@@ -57,3 +61,9 @@ services:
 
 volumes:
   db-data:
+
+x-mazetly:
+  app: nextcloud
+  version:
+    service: app
+    run: php -r 'require "/var/www/html/version.php"; echo $$OC_VersionString;'
