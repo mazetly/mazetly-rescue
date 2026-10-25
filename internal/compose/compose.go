@@ -254,45 +254,64 @@ func (p *Project) Hooks(phase string) []ServiceHook {
 // told otherwise, since whoever can write to the repository writes the kit.
 func (p *Project) Unsafe() []string {
 	var found []string
-	add := func(format string, args ...any) { found = append(found, fmt.Sprintf(format, args...)) }
 	for _, name := range p.ServiceNames() {
-		s := p.Services[name]
-		if s.Build != nil {
-			add("%s builds an image instead of pulling a pinned one", name)
-		}
-		if s.Privileged {
-			add("%s is privileged", name)
-		}
-		for field, mode := range map[string]string{"network_mode": s.NetworkMode, "pid": s.Pid, "ipc": s.Ipc, "userns_mode": s.UsernsMode} {
-			if mode == "host" {
-				add("%s uses the host's %s", name, field)
-			}
-		}
-		if len(s.CapAdd) > 0 {
-			add("%s adds capabilities: %s", name, strings.Join(s.CapAdd, ", "))
-		}
-		if len(s.Devices) > 0 {
-			add("%s accesses host devices", name)
-		}
-		for _, opt := range s.SecurityOpt {
-			if strings.Contains(opt, "unconfined") || opt == "label=disable" || opt == "label:disable" {
-				add("%s disables a security profile: %s", name, opt)
-			}
-		}
-		for _, v := range s.Volumes {
-			if v.Type == "bind" && !p.inside(v.Source) {
-				add("%s mounts %s from the host", name, v.Source)
-			}
-		}
+		found = append(found, p.Services[name].unsafe(name)...)
+		found = append(found, p.hostBinds(name)...)
 	}
 	for _, name := range sortedKeys(p.Volumes) {
 		if device := p.Volumes[name].DriverOpts["device"]; device != "" && !p.inside(device) {
-			add("volume %s binds %s from the host", name, device)
+			found = append(found, fmt.Sprintf("volume %s binds %s from the host", name, device))
 		}
 	}
 	for _, name := range sortedKeys(p.Files) {
 		if f := p.Files[name].File; f != "" && !p.inside(f) {
-			add("%s reads %s from the host", name, f)
+			found = append(found, fmt.Sprintf("%s reads %s from the host", name, f))
+		}
+	}
+	return found
+}
+
+// unsafe is Unsafe for what a service asks of the host besides its mounts.
+func (s Service) unsafe(name string) []string {
+	var found []string
+	add := func(format string, args ...any) { found = append(found, fmt.Sprintf(format, args...)) }
+	if s.Build != nil {
+		add("%s builds an image instead of pulling a pinned one", name)
+	}
+	if s.Privileged {
+		add("%s is privileged", name)
+	}
+	for _, m := range []struct{ field, mode string }{
+		{"network_mode", s.NetworkMode}, {"pid", s.Pid}, {"ipc", s.Ipc}, {"userns_mode", s.UsernsMode},
+	} {
+		if m.mode == "host" {
+			add("%s uses the host's %s", name, m.field)
+		}
+	}
+	if len(s.CapAdd) > 0 {
+		add("%s adds capabilities: %s", name, strings.Join(s.CapAdd, ", "))
+	}
+	if len(s.Devices) > 0 {
+		add("%s accesses host devices", name)
+	}
+	for _, opt := range s.SecurityOpt {
+		if disablesProfile(opt) {
+			add("%s disables a security profile: %s", name, opt)
+		}
+	}
+	return found
+}
+
+func disablesProfile(opt string) bool {
+	return strings.Contains(opt, "unconfined") || opt == "label=disable" || opt == "label:disable"
+}
+
+// hostBinds lists the bind mounts of a service that come from outside the kit.
+func (p *Project) hostBinds(service string) []string {
+	var found []string
+	for _, v := range p.Services[service].Volumes {
+		if v.Type == "bind" && !p.inside(v.Source) {
+			found = append(found, fmt.Sprintf("%s mounts %s from the host", service, v.Source))
 		}
 	}
 	return found
