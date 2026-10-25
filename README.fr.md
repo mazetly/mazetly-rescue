@@ -3,6 +3,10 @@
 *[English](README.md) · Français*
 
 [![Round trip](https://github.com/mazetly/mazetly-rescue/actions/workflows/roundtrip.yml/badge.svg)](https://github.com/mazetly/mazetly-rescue/actions/workflows/roundtrip.yml)
+[![Go](https://github.com/mazetly/mazetly-rescue/actions/workflows/go.yml/badge.svg)](https://github.com/mazetly/mazetly-rescue/actions/workflows/go.yml)
+[![CodeQL](https://github.com/mazetly/mazetly-rescue/actions/workflows/codeql.yml/badge.svg)](https://github.com/mazetly/mazetly-rescue/actions/workflows/codeql.yml)
+[![Go version](https://img.shields.io/github/go-mod/go-version/mazetly/mazetly-rescue)](go.mod)
+[![License](https://img.shields.io/github/license/mazetly/mazetly-rescue)](LICENSE)
 
 > Ne nous faites pas confiance sur parole. Vérifiez que vous pouvez vous passer de nous.
 
