@@ -1,0 +1,29 @@
+# Reference Matomo instance. Its directory is the kit: compose.yaml, .env and
+# volumes/ live here, db/ is filled at backup time. Image tags are replaced by
+# digests when the kit is produced (see SPEC.md).
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      retries: 60
+    volumes:
+      - db-data:/var/lib/mysql
+
+  app:
+    image: matomo:5-apache
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./volumes/matomo-data:/var/www/html
+
+volumes:
+  db-data:

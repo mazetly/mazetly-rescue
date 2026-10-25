@@ -1,0 +1,41 @@
+# Public proof: a Matomo kit is backed up on one machine, then restored on a
+# fresh one with the customer key only, by following the kit's RESTORE.md.
+name: Round trip
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # Test-only keys for a throwaway repository.
+  RESTIC_CUSTOMER_PASSWORD: rescue-ci-customer
+jobs:
+  backup:
+    name: Back up a reference Matomo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: test/matomo/roundtrip.sh backup "$RUNNER_TEMP/instance" "$RUNNER_TEMP/repo"
+        env:
+          RESTIC_MAZETLY_PASSWORD: rescue-ci-mazetly
+      - uses: actions/upload-artifact@v4
+        with:
+          name: restic-repository
+          path: ${{ runner.temp }}/repo
+          retention-days: 1
+
+  restore:
+    name: Restore it on a fresh machine
+    needs: backup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: restic-repository
+          path: ${{ runner.temp }}/repo
+      - run: test/matomo/roundtrip.sh restore "$RUNNER_TEMP/restore" "$RUNNER_TEMP/repo"
