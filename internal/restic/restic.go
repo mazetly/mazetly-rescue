@@ -22,6 +22,10 @@ var remote = []string{"s3:", "sftp:", "rest:", "b2:", "azure:", "gs:", "swift:",
 // to the container.
 var passEnv = []string{"AWS_", "B2_", "AZURE_", "GOOGLE_", "OS_", "ST_", "RCLONE_"}
 
+// kitTag marks the kit snapshots. kit/RESTORE.md has customers type it by
+// hand: it cannot change.
+const kitTag = "mazetly-kit"
+
 type Repo struct {
 	Location string
 	Password string
@@ -118,7 +122,7 @@ func (r Repo) InitFrom(from Repo) error {
 
 // CopyFrom copies the kit snapshots of from that this repository lacks.
 func (r Repo) CopyFrom(from Repo) error {
-	cmd, err := r.commandFrom(&from, nil, "copy", "--tag", "mazetly-kit")
+	cmd, err := r.commandFrom(&from, nil, "copy", "--tag", kitTag)
 	if err != nil {
 		return err
 	}
@@ -138,7 +142,7 @@ func (r Repo) AddKey(password, user, host string) error {
 // Backup backs dir up under its own absolute path, which a restore finds again
 // in the snapshot.
 func (r Repo) Backup(dir string, excludes []string) error {
-	args := []string{"backup", "--tag", "mazetly-kit"}
+	args := []string{"backup", "--tag", kitTag}
 	for _, e := range excludes {
 		args = append(args, "--exclude", e)
 	}
@@ -155,7 +159,7 @@ type Snapshot struct {
 
 // Snapshots lists the kit snapshots, oldest first.
 func (r Repo) Snapshots() ([]Snapshot, error) {
-	cmd, err := r.command(nil, "snapshots", "--no-lock", "--json", "--tag", "mazetly-kit")
+	cmd, err := r.command(nil, "snapshots", "--no-lock", "--json", "--tag", kitTag)
 	if err != nil {
 		return nil, err
 	}
