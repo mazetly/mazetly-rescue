@@ -2,7 +2,7 @@
 # live in /app/data. GATECHA_SECRET_KEY (in .env) signs admin sessions.
 services:
   gatecha:
-    image: ghcr.io/upellift99/gatecha:0.13.0
+    image: ghcr.io/upellift99/gatecha:0.13.1
     restart: unless-stopped
     env_file: .env
     environment:
