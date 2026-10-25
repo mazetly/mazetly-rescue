@@ -22,7 +22,7 @@ services:
         engine: postgres
 
   redis:
-    image: redis:7.4
+    image: redis:8.10
     restart: unless-stopped
 
   app:
