@@ -2,10 +2,12 @@ package rescue
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +24,16 @@ var dumpScripts = map[string]string{
 	"postgres": `exec pg_dump -U "$POSTGRES_USER" -d "${POSTGRES_DB:-$POSTGRES_USER}"`,
 }
 
-// SQLite's online backup API: a consistent copy while the application writes.
-const sqliteBackup = `import sqlite3, sys
+// SQLite's online backup API: a consistent copy while the application writes,
+// readable by the tool's user only.
+const sqliteBackup = `import os, sqlite3, sys
+out = "/out/" + sys.argv[2]
+os.umask(0o077)
 src = sqlite3.connect("file:/src/" + sys.argv[1] + "?mode=ro", uri=True)
-dst = sqlite3.connect("/out/" + sys.argv[2])
+dst = sqlite3.connect(out)
 src.backup(dst)
-dst.close()`
+dst.close()
+os.chown(out, int(sys.argv[3]), int(sys.argv[4]))`
 
 func step(msg string) { fmt.Printf("\n==> %s\n", msg) }
 
@@ -56,9 +62,19 @@ func Backup(repo restic.Repo, dir string) (err error) {
 	}
 
 	m := &Manifest{Format: Format, App: p.App, CreatedAt: time.Now().UTC().Truncate(time.Second), Images: map[string]string{}}
-	if err := os.MkdirAll(filepath.Join(dir, "db"), 0o755); err != nil {
+	if err := protectSecrets(dir); err != nil {
 		return err
 	}
+	// Database exports are secrets in clear: they exist only for the time of
+	// the backup, readable by the tool's user only.
+	exports := filepath.Join(dir, "db")
+	if err := os.MkdirAll(exports, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(exports, 0o700); err != nil {
+		return err
+	}
+	defer os.RemoveAll(exports)
 	var excludes []string
 	for _, db := range p.Databases() {
 		step(i18n.T("backup.export", db.Service, db.Engine))
@@ -104,12 +120,13 @@ func exportDB(p *compose.Project, db compose.DB) (Export, error) {
 		live, _ := p.HostPath(db.Service, db.Path)
 		cmd := exec.Command("docker", "run", "--rm",
 			"-v", filepath.Dir(live)+":/src:ro", "-v", filepath.Dir(file)+":/out",
-			docker.PythonImage, "python", "-c", sqliteBackup, filepath.Base(live), filepath.Base(file))
+			docker.PythonImage, "python", "-c", sqliteBackup, filepath.Base(live), filepath.Base(file),
+			strconv.Itoa(os.Getuid()), strconv.Itoa(os.Getgid()))
 		if err := docker.Run(cmd); err != nil {
 			return Export{}, err
 		}
 	} else {
-		f, err := os.Create(file)
+		f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return Export{}, err
 		}
@@ -128,6 +145,24 @@ func exportDB(p *compose.Project, db compose.DB) (Export, error) {
 		return Export{}, err
 	}
 	return Export{Service: db.Service, Engine: db.Engine, File: db.File(), SHA256: sum, Path: db.Path}, nil
+}
+
+// protectSecrets makes .env readable by its owner only: it holds the
+// application's secrets, and it is what the backup carries.
+func protectSecrets(dir string) error {
+	env := filepath.Join(dir, ".env")
+	info, err := os.Stat(env)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm()&0o077 == 0 {
+		return nil
+	}
+	fmt.Println(i18n.T("backup.envmode", info.Mode().Perm()))
+	return os.Chmod(env, 0o600)
 }
 
 func container(p *compose.Project, service string) (string, error) {

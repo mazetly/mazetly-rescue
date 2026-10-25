@@ -112,3 +112,43 @@ func TestUnescapesDollars(t *testing.T) {
 		t.Errorf("version %q", got)
 	}
 }
+
+func TestUnsafe(t *testing.T) {
+	p, err := Parse("/srv/kit", []byte(config))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Unsafe(); len(got) != 0 {
+		t.Errorf("a plain recipe flagged: %v", got)
+	}
+	cases := map[string]string{
+		"privileged":     "    privileged: true\n",
+		"host network":   "    network_mode: host\n",
+		"host pid":       "    pid: host\n",
+		"capabilities":   "    cap_add: [SYS_ADMIN]\n",
+		"devices":        "    devices: [/dev/sda:/dev/sda]\n",
+		"no apparmor":    "    security_opt: [apparmor=unconfined]\n",
+		"build":          "    build: .\n",
+		"docker socket":  "    volumes:\n      - type: bind\n        source: /var/run/docker.sock\n        target: /var/run/docker.sock\n",
+		"parent of kit":  "    volumes:\n      - type: bind\n        source: /srv\n        target: /srv\n",
+		"sibling prefix": "    volumes:\n      - type: bind\n        source: /srv/kit-other\n        target: /x\n",
+	}
+	for name, extra := range cases {
+		c := strings.Replace(config, "  db:\n    image: mariadb:11.4\n", "  db:\n    image: mariadb:11.4\n"+extra, 1)
+		p, err := Parse("/srv/kit", []byte(c))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(p.Unsafe()) == 0 {
+			t.Errorf("%s: not flagged", name)
+		}
+	}
+	host := config + "volumes:\n  data:\n    driver_opts:\n      type: none\n      o: bind\n      device: /etc\n"
+	if p, _ := Parse("/srv/kit", []byte(host)); len(p.Unsafe()) == 0 {
+		t.Error("a named volume bound to /etc: not flagged")
+	}
+	secret := config + "secrets:\n  key:\n    file: /root/.ssh/id_ed25519\n"
+	if p, _ := Parse("/srv/kit", []byte(secret)); len(p.Unsafe()) == 0 {
+		t.Error("a secret read from /root: not flagged")
+	}
+}

@@ -69,6 +69,13 @@ same two kinds of key: Mazetly's to write, the customer's to restore.
   *To be validated: `forget`/`prune` on a locked bucket.*
 - Storage is billed to the customer by their provider. Mazetly charges nothing
   extra.
+- `mazetly-rescue copy --to <repo> --init` creates the copy with the source's
+  chunking parameters (so copies deduplicate) and the customer key; later runs
+  of `copy --to <repo>` send the snapshots it lacks.
+- *Open problem*: restic reads S3 credentials from environment variables shared
+  by both repositories, so a direct copy only works when one access key opens
+  both buckets. Two providers with two keys need rclone remotes, one per
+  bucket. To be solved before offering the copy.
 
 ## Snapshot contents
 
@@ -93,6 +100,50 @@ under `volumes/` (SQLite and its `-wal`/`-shm`) are excluded: `db/` holds their
 consistent copy. Exports are not compressed: restic compresses and deduplicates,
 and a plain SQL dump that barely changed from one day to the next costs almost
 nothing to store again, where a compressed one would be new data every time.
+
+**Secrets outside the repository.** `.env` is made `0600` at every backup and
+restore. Database exports are written `0600` in a `0700` directory, exist only
+for the time of the backup, and are removed once restic has them, even when the
+backup fails. A restore removes them once imported. The repository password
+reaches restic through the environment, never the command line.
+
+## Trust boundary
+
+Whoever can write to the repository writes the kit: Mazetly, the customer, or
+an attacker holding one of their keys. restic authenticates every snapshot with
+the repository's key, so the storage provider alone cannot forge one; a key
+holder can. A restore therefore treats the kit as untrusted until accepted:
+
+1. **Nothing runs before the review.** The kit is extracted, its exports are
+   checked against the manifest and its images pinned, and only
+   `docker compose config` reads it, which runs nothing.
+2. **The kit stays within its directory.** `restore` and `verify` refuse a kit
+   with a privileged container, a host mount outside the kit (the Docker socket
+   included), the host's network, PID, IPC or user namespace, added
+   capabilities, host devices, a disabled security profile, an image built
+   instead of pulled, or a named volume, secret or config bound to a host path.
+   Hooks run inside the kit's containers, never on the host, so they stay within
+   the same boundary. `--allow-unsafe` lifts the refusal, knowingly; none of the
+   recipes here needs it.
+3. **A person accepts it.** `restore` shows the application, its version, each
+   service's pinned image and published ports, and the commands it will run,
+   then asks before starting. Without a terminal it stops unless given `--yes`.
+
+What the boundary does not cover: the images themselves. They are pinned by
+digest to what ran at backup time, from their public registries; a kit cannot
+swap one without the digest changing, which the review shows.
+
+## Checking backups
+
+- **`check`** proves, with the key given, that the repository opens and that
+  the latest backup's database exports read back with the checksums recorded at
+  backup. Fast and harmless; `--max-age 26h` turns it into a monitoring probe.
+- **`verify`** proves the application comes back: it restores the latest
+  backup into a throwaway directory, publishes no port and keeps off fixed
+  container names (so it runs next to the live instance), waits for the
+  healthchecks, checks that the running version is the backed-up one, then
+  removes everything. A restore only exists once it has been tested: `verify`
+  is the test, for Mazetly every night and for a customer whenever they want.
 
 ## Recipes: `x-mazetly` in `compose.yaml`
 
@@ -207,10 +258,9 @@ images, pinned by digest.
   pinned by digest, so a server needs Docker and nothing else.
   `docker compose config --format json` drops `x-*` fields; the tool reads the
   YAML output.
-- **Commands**: `restore` (the steps of `RESTORE.md`), `check` (the key opens
-  the repository and the latest exports read back intact; `--max-age` for
-  monitoring), `backup` (Mazetly's side) and `init` (a repository with a
-  customer key).
+- **Commands**: `check` and `verify` (see "Checking backups"), `restore` (the
+  steps of `RESTORE.md`, behind the trust boundary), `backup` and `init`
+  (Mazetly's side), `copy` (to the customer's bucket).
 - **Languages: English and French.** English is the reference for the
   specification (`SPEC.md`); French is its translation (`SPEC.fr.md`). The tool
   speaks the system language (`LANG`), English by default; `RESTORE.md` is written

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -23,6 +24,9 @@ type Project struct {
 	App      string
 	Version  *Version
 	Services map[string]Service
+	// Top-level volumes, secrets and configs, read only to spot host access.
+	Volumes map[string]TopVolume
+	Files   map[string]TopFile
 }
 
 // Version tells how to read the running application's version: the output of
@@ -36,7 +40,35 @@ type Version struct {
 type Service struct {
 	Image   string   `yaml:"image"`
 	Volumes []Volume `yaml:"volumes"`
+	Ports   []Port   `yaml:"ports"`
 	X       X        `yaml:"x-mazetly"`
+
+	// What would let a container reach beyond the kit: see Unsafe.
+	Build         any      `yaml:"build"`
+	Privileged    bool     `yaml:"privileged"`
+	NetworkMode   string   `yaml:"network_mode"`
+	Pid           string   `yaml:"pid"`
+	Ipc           string   `yaml:"ipc"`
+	UsernsMode    string   `yaml:"userns_mode"`
+	CapAdd        []string `yaml:"cap_add"`
+	Devices       []any    `yaml:"devices"`
+	SecurityOpt   []string `yaml:"security_opt"`
+	ContainerName string   `yaml:"container_name"`
+}
+
+type Port struct {
+	Target    int    `yaml:"target"`
+	Published string `yaml:"published"`
+	HostIP    string `yaml:"host_ip"`
+}
+
+type TopVolume struct {
+	Driver     string            `yaml:"driver"`
+	DriverOpts map[string]string `yaml:"driver_opts"`
+}
+
+type TopFile struct {
+	File string `yaml:"file"`
 }
 
 type Volume struct {
@@ -100,7 +132,10 @@ func Load(dir string) (*Project, error) {
 // Parse reads the output of `docker compose config`.
 func Parse(dir string, config []byte) (*Project, error) {
 	var raw struct {
-		Services map[string]Service `yaml:"services"`
+		Services map[string]Service   `yaml:"services"`
+		Volumes  map[string]TopVolume `yaml:"volumes"`
+		Secrets  map[string]TopFile   `yaml:"secrets"`
+		Configs  map[string]TopFile   `yaml:"configs"`
 		X        struct {
 			App     string   `yaml:"app"`
 			Version *Version `yaml:"version"`
@@ -109,7 +144,14 @@ func Parse(dir string, config []byte) (*Project, error) {
 	if err := yaml.Unmarshal(config, &raw); err != nil {
 		return nil, fmt.Errorf("reading the compose file: %w", err)
 	}
-	p := &Project{Dir: dir, App: raw.X.App, Version: raw.X.Version, Services: raw.Services}
+	p := &Project{Dir: dir, App: raw.X.App, Version: raw.X.Version, Services: raw.Services,
+		Volumes: raw.Volumes, Files: map[string]TopFile{}}
+	for name, f := range raw.Secrets {
+		p.Files["secret "+name] = f
+	}
+	for name, f := range raw.Configs {
+		p.Files["config "+name] = f
+	}
 	if p.Version != nil {
 		p.Version.Run = unescape(p.Version.Run)
 	}
@@ -204,4 +246,68 @@ func (p *Project) Hooks(phase string) []ServiceHook {
 		}
 	}
 	return hooks
+}
+
+// Unsafe lists what in the project would let a container reach beyond the kit
+// directory: the host's filesystem, network, processes or devices, or extra
+// privileges. A kit from a backup needs none of it; a restore refuses it unless
+// told otherwise, since whoever can write to the repository writes the kit.
+func (p *Project) Unsafe() []string {
+	var found []string
+	add := func(format string, args ...any) { found = append(found, fmt.Sprintf(format, args...)) }
+	for _, name := range p.ServiceNames() {
+		s := p.Services[name]
+		if s.Build != nil {
+			add("%s builds an image instead of pulling a pinned one", name)
+		}
+		if s.Privileged {
+			add("%s is privileged", name)
+		}
+		for field, mode := range map[string]string{"network_mode": s.NetworkMode, "pid": s.Pid, "ipc": s.Ipc, "userns_mode": s.UsernsMode} {
+			if mode == "host" {
+				add("%s uses the host's %s", name, field)
+			}
+		}
+		if len(s.CapAdd) > 0 {
+			add("%s adds capabilities: %s", name, strings.Join(s.CapAdd, ", "))
+		}
+		if len(s.Devices) > 0 {
+			add("%s accesses host devices", name)
+		}
+		for _, opt := range s.SecurityOpt {
+			if strings.Contains(opt, "unconfined") || opt == "label=disable" || opt == "label:disable" {
+				add("%s disables a security profile: %s", name, opt)
+			}
+		}
+		for _, v := range s.Volumes {
+			if v.Type == "bind" && !p.inside(v.Source) {
+				add("%s mounts %s from the host", name, v.Source)
+			}
+		}
+	}
+	for _, name := range sortedKeys(p.Volumes) {
+		if device := p.Volumes[name].DriverOpts["device"]; device != "" && !p.inside(device) {
+			add("volume %s binds %s from the host", name, device)
+		}
+	}
+	for _, name := range sortedKeys(p.Files) {
+		if f := p.Files[name].File; f != "" && !p.inside(f) {
+			add("%s reads %s from the host", name, f)
+		}
+	}
+	return found
+}
+
+func (p *Project) inside(path string) bool {
+	rel, err := filepath.Rel(p.Dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../") && !filepath.IsAbs(rel)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }

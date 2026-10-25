@@ -24,15 +24,23 @@ var version = "dev"
 const usage = `mazetly-rescue %s
 
 Usage:
-  mazetly-rescue restore --target <dir> [--snapshot <id>]   restore and start the application
-  mazetly-rescue check [--max-age <duration>]               check that your key opens your backups
-  mazetly-rescue backup <instance-dir>                      back up a running instance
-  mazetly-rescue init [--customer-key-file <file>]          create a repository with a customer key
+  mazetly-rescue check [--max-age <duration>]       does my key open my backups, do they read back?
+  mazetly-rescue verify [--snapshot <id>]           restore into a throwaway directory, start, remove
+  mazetly-rescue restore --target <dir> [--snapshot <id>] [--yes]
+                                                    restore and start the application
+  mazetly-rescue backup <instance-dir>              back up a running instance
+  mazetly-rescue init [--customer-key-file <file>]  create a repository with a customer key
+  mazetly-rescue copy --to <repo> [--init [--customer-key-file <file>]]
+                                                    copy the backups to another repository
   mazetly-rescue version
 
 Every command but version takes --repo and --password-file, or reads
-RESTIC_REPOSITORY, RESTIC_PASSWORD and RESTIC_PASSWORD_FILE. S3 credentials
-come from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+RESTIC_REPOSITORY, RESTIC_PASSWORD and RESTIC_PASSWORD_FILE. copy reads the
+destination's password from --to-password-file or RESCUE_TO_PASSWORD. S3
+credentials come from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+
+restore and verify refuse a kit that reaches beyond its directory (privileged
+containers, host mounts, host network...); --allow-unsafe accepts it.
 `
 
 func main() {
@@ -57,19 +65,60 @@ func run(command string, args []string) error {
 	case "restore":
 		target := fs.String("target", "", "directory to restore into (empty or absent)")
 		snapshot := fs.String("snapshot", "latest", "snapshot to restore")
+		yes := fs.Bool("yes", false, "start without asking, after the review")
+		allowUnsafe := fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
 		fs.Parse(args)
 		if *target == "" {
 			return errors.New("restore needs --target")
 		}
-		repo, err := openRepo(*repoFlag, *passwordFile)
+		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
 		if err != nil {
 			return err
 		}
-		return rescue.Restore(repo, *target, *snapshot)
+		return rescue.Restore(repo, *target, rescue.RestoreOptions{Snapshot: *snapshot, Yes: *yes, AllowUnsafe: *allowUnsafe})
+	case "verify":
+		snapshot := fs.String("snapshot", "latest", "snapshot to verify")
+		allowUnsafe := fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
+		fs.Parse(args)
+		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
+		if err != nil {
+			return err
+		}
+		return rescue.Verify(repo, *snapshot, *allowUnsafe)
+	case "copy":
+		to := fs.String("to", "", "destination repository")
+		toPasswordFile := fs.String("to-password-file", "", "file holding the destination's password")
+		initDst := fs.Bool("init", false, "create the destination first")
+		keyFile := fs.String("customer-key-file", "", "with --init: file holding the customer key (generated when absent)")
+		fs.Parse(args)
+		if *to == "" {
+			return errors.New("copy needs --to")
+		}
+		src, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
+		if err != nil {
+			return err
+		}
+		dst, err := openRepo(*to, *toPasswordFile, "RESCUE_TO_PASSWORD")
+		if err != nil {
+			return err
+		}
+		var key string
+		if *initDst {
+			if key, err = customerKey(*keyFile); err != nil {
+				return err
+			}
+		}
+		if err := rescue.Copy(src, dst, *initDst, key); err != nil {
+			return err
+		}
+		if *initDst && *keyFile == "" {
+			fmt.Printf("\n%s\n\n    %s\n\n", i18n.T("init.customer"), key)
+		}
+		return nil
 	case "check":
 		maxAge := fs.Duration("max-age", 0, "fail when the latest backup is older (e.g. 26h)")
 		fs.Parse(args)
-		repo, err := openRepo(*repoFlag, *passwordFile)
+		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
 		if err != nil {
 			return err
 		}
@@ -79,7 +128,7 @@ func run(command string, args []string) error {
 		if fs.NArg() != 1 {
 			return errors.New("backup needs the instance directory")
 		}
-		repo, err := openRepo(*repoFlag, *passwordFile)
+		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
 		if err != nil {
 			return err
 		}
@@ -87,7 +136,7 @@ func run(command string, args []string) error {
 	case "init":
 		keyFile := fs.String("customer-key-file", "", "file holding the customer key (generated when absent)")
 		fs.Parse(args)
-		repo, err := openRepo(*repoFlag, *passwordFile)
+		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
 		if err != nil {
 			return err
 		}
@@ -102,11 +151,13 @@ func run(command string, args []string) error {
 	}
 }
 
-func openRepo(location, passwordFile string) (restic.Repo, error) {
+// openRepo takes the password from a file, then from the environment
+// variable passwordEnv, then asks for it on a terminal.
+func openRepo(location, passwordFile, passwordEnv string) (restic.Repo, error) {
 	if location == "" {
 		return restic.Repo{}, errors.New(i18n.T("repo.missing"))
 	}
-	password := os.Getenv("RESTIC_PASSWORD")
+	password := os.Getenv(passwordEnv)
 	switch {
 	case passwordFile != "":
 		data, err := os.ReadFile(passwordFile)
@@ -129,22 +180,28 @@ func openRepo(location, passwordFile string) (restic.Repo, error) {
 	return restic.Repo{Location: location, Password: password}, nil
 }
 
-func initRepo(repo restic.Repo, keyFile string) error {
-	var key string
+// customerKey reads the customer key from keyFile, or generates one.
+func customerKey(keyFile string) (string, error) {
 	if keyFile != "" {
 		data, err := os.ReadFile(keyFile)
 		if err != nil {
-			return err
+			return "", err
 		}
-		key = strings.TrimRight(string(data), "\r\n")
-	} else {
-		random := make([]byte, 20)
-		if _, err := rand.Read(random); err != nil {
-			return err
-		}
-		// The key is stored as shown, dashes included: what the customer reads
-		// out is what opens the repository.
-		key = group(strings.ToLower(base32.StdEncoding.EncodeToString(random)))
+		return strings.TrimRight(string(data), "\r\n"), nil
+	}
+	random := make([]byte, 20)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	// The key is stored as shown, dashes included: what the customer reads out
+	// is what opens the repository.
+	return group(strings.ToLower(base32.StdEncoding.EncodeToString(random))), nil
+}
+
+func initRepo(repo restic.Repo, keyFile string) error {
+	key, err := customerKey(keyFile)
+	if err != nil {
+		return err
 	}
 	if err := repo.Init(); err != nil {
 		return err

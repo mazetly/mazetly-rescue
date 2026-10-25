@@ -4,10 +4,13 @@
 # needs to create and check data lives in apps/<app>/test.sh.
 #
 #   roundtrip.sh <app> seed           <kit>          start the app in <kit>, add data
-#   roundtrip.sh <app> backup         <kit> <repo>   back it up with mazetly-rescue
-#   roundtrip.sh <app> restore-manual <kit> <repo>   restore by hand, following
+#   roundtrip.sh <app> backup         <kit> <repo>   back it up with mazetly-rescue, then
+#                                                    copy it to <repo>-customer, the
+#                                                    customer's own bucket
+#   roundtrip.sh <app> restore-manual <kit> <repo>   restore <repo> by hand, following
 #                                                    RESTORE.md, check, upgrade
-#   roundtrip.sh <app> restore-tool   <kit> <repo>   restore with mazetly-rescue, check
+#   roundtrip.sh <app> restore-tool   <kit> <repo>   check, verify and restore
+#                                                    <repo>-customer with mazetly-rescue
 #
 # backup needs RESTIC_PASSWORD (Mazetly's key) and RESTIC_CUSTOMER_PASSWORD;
 # the restores need RESTIC_CUSTOMER_PASSWORD only. RESCUE_BIN is the tool.
@@ -125,10 +128,17 @@ backup() {
 	"$RESCUE_BIN" init --repo "$repo" --customer-key-file "$work/customer-key"
 	rm "$work/customer-key"
 	"$RESCUE_BIN" backup --repo "$repo" "$kit"
-	# The instance is gone after this: restores start from the repository alone.
+	[ ! -e "$kit/db" ] || die "the database exports were left in the instance"
+	log "mazetly-rescue copy to the customer's bucket"
+	printf %s "$RESTIC_CUSTOMER_PASSWORD" >"$work/customer-key"
+	RESCUE_TO_PASSWORD=$RESTIC_PASSWORD-copy "$RESCUE_BIN" copy --repo "$repo" --to "$repo-customer" \
+		--init --customer-key-file "$work/customer-key"
+	rm "$work/customer-key"
+	# The instance is gone after this: restores start from the repositories alone.
 	compose down -v
 	# Root-owned repository files must be readable to be uploaded as an artifact.
-	docker run --rm -v "$repo":/repo --entrypoint chown "$RESTIC_IMAGE" -R "$(id -u):$(id -g)" /repo
+	docker run --rm -v "$repo":/repo -v "$repo-customer":/copy --entrypoint chown "$RESTIC_IMAGE" \
+		-R "$(id -u):$(id -g)" /repo /copy
 }
 
 restore_manual() {
@@ -207,9 +217,13 @@ restore_manual() {
 
 restore_tool() {
 	: "${RESTIC_CUSTOMER_PASSWORD:?}"
-	log "mazetly-rescue check, then restore, with the customer key"
-	RESTIC_PASSWORD=$RESTIC_CUSTOMER_PASSWORD "$RESCUE_BIN" check --repo "$repo"
-	RESTIC_PASSWORD=$RESTIC_CUSTOMER_PASSWORD "$RESCUE_BIN" restore --repo "$repo" --target "$kit"
+	log "mazetly-rescue check, verify, then restore, from the customer's copy with the customer key"
+	export RESTIC_PASSWORD=$RESTIC_CUSTOMER_PASSWORD
+	"$RESCUE_BIN" check --repo "$repo-customer"
+	"$RESCUE_BIN" verify --repo "$repo-customer"
+	"$RESCUE_BIN" restore --repo "$repo-customer" --target "$kit" --yes
+	[ ! -e "$kit/db" ] || die "the database exports were left after the restore"
+	[ "$(stat -c %a "$kit/.env")" = 600 ] || die ".env is not 0600 after the restore"
 	CONFIG=$(config)
 	wait_ready
 	log "Checks"

@@ -72,6 +72,14 @@ types de clé : celle de Mazetly pour écrire, celle du client pour restaurer.
   *À valider : `forget`/`prune` sur un bucket verrouillé.*
 - Le stockage est facturé au client par son fournisseur. Mazetly ne facture rien
   de plus.
+- `mazetly-rescue copy --to <dépôt> --init` crée la copie avec les paramètres de
+  découpage de la source (pour que les copies se dédoublonnent) et la clé client ;
+  les `copy --to <dépôt>` suivants envoient les instantanés manquants.
+- *Problème ouvert* : restic lit les identifiants S3 dans des variables
+  d'environnement communes aux deux dépôts ; une copie directe ne fonctionne donc
+  que si une même clé d'accès ouvre les deux buckets. Deux fournisseurs avec deux
+  clés demandent des remotes rclone, un par bucket. À résoudre avant de proposer
+  la copie.
 
 ## Contenu d'un instantané
 
@@ -98,6 +106,56 @@ en contient la copie cohérente. Les exports ne sont pas compressés : restic
 compresse et déduplique, et un dump SQL qui a peu changé d'un jour à l'autre ne
 coûte presque rien à stocker à nouveau, quand un dump compressé serait chaque
 fois une donnée nouvelle.
+
+**Les secrets hors du dépôt.** `.env` est passé en `0600` à chaque sauvegarde
+et restauration. Les exports de base sont écrits en `0600` dans un dossier en
+`0700`, n'existent que le temps de la sauvegarde et sont supprimés une fois
+envoyés à restic, même si la sauvegarde échoue. Une restauration les supprime
+une fois importés. Le mot de passe du dépôt passe à restic par l'environnement,
+jamais par la ligne de commande.
+
+## Frontière de confiance
+
+Qui peut écrire dans le dépôt écrit le kit : Mazetly, le client, ou un attaquant
+qui détient l'une de leurs clés. restic authentifie chaque instantané avec la clé
+du dépôt : l'hébergeur du stockage ne peut pas en fabriquer un seul ; un
+détenteur de clé le peut. Une restauration traite donc le kit comme non fiable
+tant qu'il n'a pas été accepté :
+
+1. **Rien ne tourne avant la relecture.** Le kit est extrait, ses exports sont
+   vérifiés contre le manifeste et ses images épinglées ; seul
+   `docker compose config` le lit, et cette commande n'exécute rien.
+2. **Le kit reste dans son dossier.** `restore` et `verify` refusent un kit avec
+   un conteneur privilégié, un montage de l'hôte hors du kit (socket Docker
+   compris), le réseau, les PID, l'IPC ou l'espace utilisateur de l'hôte, des
+   capacités ajoutées, des périphériques de l'hôte, un profil de sécurité
+   désactivé, une image construite au lieu d'être téléchargée, ou un volume
+   nommé, un secret ou une config liés à un chemin de l'hôte. Les hooks tournent
+   dans les conteneurs du kit, jamais sur l'hôte : ils restent dans la même
+   frontière. `--allow-unsafe` lève le refus, en connaissance de cause ; aucune
+   des recettes d'ici n'en a besoin.
+3. **Une personne l'accepte.** `restore` affiche l'application, sa version,
+   l'image épinglée et les ports publiés de chaque service, et les commandes
+   qu'il va lancer, puis demande avant de démarrer. Sans terminal, il s'arrête
+   sauf avec `--yes`.
+
+Ce que la frontière ne couvre pas : les images elles-mêmes. Elles sont épinglées
+par digest sur ce qui tournait à la sauvegarde, depuis leurs registres publics ;
+un kit ne peut pas en substituer une sans que le digest change, ce que la
+relecture affiche.
+
+## Vérifier les sauvegardes
+
+- **`check`** prouve, avec la clé fournie, que le dépôt s'ouvre et que les
+  exports de base de la dernière sauvegarde se relisent avec les sommes de
+  contrôle enregistrées. Rapide et sans effet ; `--max-age 26h` en fait une sonde
+  de supervision.
+- **`verify`** prouve que l'application revient : il restaure la dernière
+  sauvegarde dans un dossier jetable, sans publier de port ni imposer de nom de
+  conteneur (pour tourner à côté de l'instance en service), attend les
+  healthchecks, vérifie que la version qui tourne est celle sauvegardée, puis
+  efface tout. Une restauration n'existe que si elle a été testée : `verify` est
+  ce test, chaque nuit pour Mazetly et quand il le veut pour un client.
 
 ## Recettes : `x-mazetly` dans `compose.yaml`
 
@@ -214,10 +272,9 @@ officielles, épinglées par digest.
   officielle de restic, épinglée par digest ; un serveur n'a donc besoin que de
   Docker. `docker compose config --format json` perd les champs `x-*` : l'outil
   lit la sortie YAML.
-- **Commandes** : `restore` (les étapes de `RESTORE.md`), `check` (la clé ouvre
-  le dépôt et les derniers exports se relisent intacts ; `--max-age` pour la
-  supervision), `backup` (côté Mazetly) et `init` (un dépôt avec une clé
-  client).
+- **Commandes** : `check` et `verify` (voir « Vérifier les sauvegardes »),
+  `restore` (les étapes de `RESTORE.md`, derrière la frontière de confiance),
+  `backup` et `init` (côté Mazetly), `copy` (vers le bucket du client).
 - **Langues : anglais et français.** L'anglais fait foi pour la spécification
   (`SPEC.md`), le français en est la traduction (`SPEC.fr.md`). L'outil parle la
   langue du système (`LANG`), en anglais par défaut ; `RESTORE.md` est rédigé

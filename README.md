@@ -23,6 +23,7 @@ You need:
 export RESTIC_REPOSITORY=s3:https://s3.fr-par.scw.cloud/my-bucket/my-app
 export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
 mazetly-rescue check                      # does my key open my backups?
+mazetly-rescue verify                     # do they restore and start? (then removed)
 mazetly-rescue restore --target /srv/app  # bring the application back
 ```
 

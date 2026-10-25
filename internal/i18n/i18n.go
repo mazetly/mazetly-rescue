@@ -35,6 +35,19 @@ var messages = map[string][2]string{
 	"password.missing": {"no repository password: set RESTIC_PASSWORD or RESTIC_PASSWORD_FILE, or use --password-file", "aucun mot de passe de dépôt : définissez RESTIC_PASSWORD ou RESTIC_PASSWORD_FILE, ou utilisez --password-file"},
 	"repo.missing":     {"no repository: set RESTIC_REPOSITORY or use --repo", "aucun dépôt : définissez RESTIC_REPOSITORY ou utilisez --repo"},
 	"error":            {"error: %v", "erreur : %v"},
+	"backup.envmode":   {".env was readable by others (%v): now 0600", ".env était lisible par d'autres (%v) : passé en 0600"},
+	"restore.review":   {"What this kit will run", "Ce que ce kit va lancer"},
+	"restore.hook":     {"after restore, in", "après restauration, dans"},
+	"restore.unsafe":   {"This kit reaches beyond its directory:", "Ce kit sort de son dossier :"},
+	"restore.refused":  {"refused: a restored kit must stay within its directory (--allow-unsafe if you trust it)", "refusé : un kit restauré doit rester dans son dossier (--allow-unsafe si vous lui faites confiance)"},
+	"restore.needyes":  {"no terminal to confirm on: review the kit, then run again with --yes", "pas de terminal pour confirmer : relisez le kit, puis relancez avec --yes"},
+	"restore.confirm":  {"Start it? [y/N] ", "Le démarrer ? [o/N] "},
+	"restore.aborted":  {"stopped before starting anything; the kit stays in place", "arrêt avant tout démarrage ; le kit reste en place"},
+	"copy.init":        {"Creating the destination repository", "Création du dépôt de destination"},
+	"copy.copy":        {"Copying the snapshots it lacks", "Copie des instantanés manquants"},
+	"copy.done":        {"The destination holds the backup of %s.", "La destination contient la sauvegarde du %s."},
+	"verify.cleanup":   {"Removing the test restore", "Suppression de la restauration de test"},
+	"verify.ok":        {"The latest backup restores and starts: verified.", "La dernière sauvegarde se restaure et démarre : vérifié."},
 }
 
 var french = isFrench()

@@ -39,20 +39,37 @@ func (r Repo) local() bool {
 // command builds `docker run restic/restic ...`. The password goes through the
 // environment, never the command line.
 func (r Repo) command(mounts []string, args ...string) (*exec.Cmd, error) {
-	location := r.Location
-	cmdArgs := []string{"run", "--rm", "-i", "-e", "RESTIC_PASSWORD", "-e", "RESTIC_REPOSITORY"}
-	if r.local() {
-		abs, err := filepath.Abs(r.Location)
-		if err != nil {
-			return nil, err
+	return r.commandFrom(nil, mounts, args...)
+}
+
+// commandFrom is command with a second repository, from, for init and copy:
+// restic reads it from RESTIC_FROM_REPOSITORY and RESTIC_FROM_PASSWORD.
+func (r Repo) commandFrom(from *Repo, mounts []string, args ...string) (*exec.Cmd, error) {
+	cmdArgs := []string{"run", "--rm", "-i"}
+	env := os.Environ()
+	for _, repo := range []struct {
+		r      *Repo
+		prefix string
+		mount  string
+	}{{&r, "RESTIC_", "/repo"}, {from, "RESTIC_FROM_", "/from"}} {
+		if repo.r == nil {
+			continue
 		}
-		cmdArgs = append(cmdArgs, "-v", abs+":/repo")
-		location = "/repo"
+		location := repo.r.Location
+		if repo.r.local() {
+			abs, err := filepath.Abs(location)
+			if err != nil {
+				return nil, err
+			}
+			cmdArgs = append(cmdArgs, "-v", abs+":"+repo.mount)
+			location = repo.mount
+		}
+		cmdArgs = append(cmdArgs, "-e", repo.prefix+"PASSWORD", "-e", repo.prefix+"REPOSITORY")
+		env = append(env, repo.prefix+"PASSWORD="+repo.r.Password, repo.prefix+"REPOSITORY="+location)
 	}
 	for _, m := range mounts {
 		cmdArgs = append(cmdArgs, "-v", m)
 	}
-	env := append(os.Environ(), "RESTIC_PASSWORD="+r.Password, "RESTIC_REPOSITORY="+location)
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		for _, prefix := range passEnv {
@@ -82,6 +99,30 @@ func (r Repo) Init() error {
 		}
 	}
 	return r.run(nil, "init")
+}
+
+// InitFrom creates the repository with the chunking parameters of from, so
+// that copies between them deduplicate.
+func (r Repo) InitFrom(from Repo) error {
+	if r.local() {
+		if err := os.MkdirAll(r.Location, 0o700); err != nil {
+			return err
+		}
+	}
+	cmd, err := r.commandFrom(&from, nil, "init", "--copy-chunker-params")
+	if err != nil {
+		return err
+	}
+	return docker.Run(cmd)
+}
+
+// CopyFrom copies the kit snapshots of from that this repository lacks.
+func (r Repo) CopyFrom(from Repo) error {
+	cmd, err := r.commandFrom(&from, nil, "copy", "--tag", "mazetly-kit")
+	if err != nil {
+		return err
+	}
+	return docker.Run(cmd)
 }
 
 // AddKey adds a key with its own password, labelled with user and host.
