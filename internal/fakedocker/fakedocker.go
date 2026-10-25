@@ -28,6 +28,9 @@ while [ -e "$d/rule$i.pattern" ]; do
 	*"$pattern"*)
 		cat "$d/rule$i.stdout"
 		cat "$d/rule$i.stderr" >&2
+		if [ -e "$d/rule$i.script" ]; then
+			sh "$d/rule$i.script" "$@" || exit $?
+		fi
 		exit "$(cat "$d/rule$i.code")"
 		;;
 	esac
@@ -76,6 +79,18 @@ func (f *Fake) Reply(pattern, stdout, stderr string, code int) {
 		}
 	}
 	f.rules++
+}
+
+// Exec makes the calls whose arguments contain pattern run a shell script,
+// given the call's arguments as $1, $2...: what the real command would have
+// done to the host, such as writing into a mounted directory.
+func (f *Fake) Exec(pattern, shell string) {
+	f.t.Helper()
+	base := filepath.Join(f.dir, "rule"+strconv.Itoa(f.rules))
+	if err := os.WriteFile(base+".script", []byte(shell), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	f.Reply(pattern, "", "", 0)
 }
 
 // Calls returns the calls made so far, in order.
