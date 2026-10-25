@@ -2,7 +2,7 @@
 # up besides the database. SECRET_KEY (in .env) signs sessions and links.
 services:
   db:
-    image: postgres:17
+    image: postgres:18
     restart: unless-stopped
     env_file: .env
     healthcheck:
