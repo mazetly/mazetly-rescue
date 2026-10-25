@@ -21,6 +21,7 @@ var messages = map[string][2]string{
 	"restore.start":    {"Starting the application", "Démarrage de l'application"},
 	"restore.done":     {"%s %s is running again in %s.", "%s %s tourne à nouveau dans %s."},
 	"restore.next":     {"Next: read NOTES.md (new domain, upgrades), point your domain at this server and put a TLS proxy in front of it.", "Ensuite : lisez NOTES.md (nouveau domaine, mises à jour), faites pointer votre domaine vers ce serveur et placez un proxy TLS devant."},
+	"restore.version":  {"the restored application runs version %q, the backup recorded %q", "l'application restaurée tourne en version %q, la sauvegarde indiquait %q"},
 	"restore.notempty": {"%s exists and is not empty", "%s existe et n'est pas vide"},
 	"check.latest":     {"Latest backup: %s (%s ago), %s %s, from %s", "Dernière sauvegarde : %s (il y a %s), %s %s, depuis %s"},
 	"check.db":         {"Database export %s: readable, checksum OK", "Export de base %s : lisible, somme de contrôle correcte"},

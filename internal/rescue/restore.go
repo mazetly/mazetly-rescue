@@ -88,6 +88,14 @@ func Restore(repo restic.Repo, target, snapshotID string) error {
 	if err := runHooks(p, "post_restore"); err != nil {
 		return err
 	}
+	// The point of pinning: what runs now is exactly what was backed up.
+	running, err := appVersion(p)
+	if err != nil {
+		return err
+	}
+	if running != m.AppVersion {
+		return errors.New(i18n.T("restore.version", running, m.AppVersion))
+	}
 	fmt.Println()
 	fmt.Println(i18n.T("restore.done", m.App, m.AppVersion, target))
 	fmt.Println(i18n.T("restore.next"))

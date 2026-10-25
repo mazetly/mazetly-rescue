@@ -67,12 +67,21 @@ type Hook struct {
 
 func (h *Hook) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
-		h.Run = n.Value
+		h.Run = unescape(n.Value)
 		return nil
 	}
 	type plain Hook
-	return n.Decode((*plain)(h))
+	if err := n.Decode((*plain)(h)); err != nil {
+		return err
+	}
+	h.Run = unescape(h.Run)
+	return nil
 }
+
+// unescape turns Compose's $$ back into $. Compose interpolates x-* fields
+// too, so a recipe writes $$ for a literal $, and `docker compose config`
+// prints it still escaped.
+func unescape(s string) string { return strings.ReplaceAll(s, "$$", "$") }
 
 // Load normalizes dir's compose file with Docker Compose. Its JSON output
 // drops x-* fields, its YAML output keeps them.
@@ -101,6 +110,9 @@ func Parse(dir string, config []byte) (*Project, error) {
 		return nil, fmt.Errorf("reading the compose file: %w", err)
 	}
 	p := &Project{Dir: dir, App: raw.X.App, Version: raw.X.Version, Services: raw.Services}
+	if p.Version != nil {
+		p.Version.Run = unescape(p.Version.Run)
+	}
 	if p.App == "" {
 		return nil, errors.New("the compose file has no x-mazetly.app")
 	}

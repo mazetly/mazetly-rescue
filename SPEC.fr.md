@@ -122,6 +122,10 @@ le fichier se lance tel quel avec `docker compose up`.
 - **`x-mazetly.upgrade.renew_anon_volumes`** : l'image ne copie son code qu'une
   fois, dans un volume anonyme ; une nouvelle image demande
   `docker compose up --renew-anon-volumes`.
+- **`$` dans les commandes** : Compose interprète aussi les champs `x-*` ; une
+  recette écrit donc `$$` pour un `$` littéral, et `docker compose config`
+  l'affiche toujours échappé : l'outil remet `$$` en `$` avant de lancer une
+  commande.
 - **`x-mazetly` en haut du fichier** : `app`, le nom de l'application, et
   `version`, la façon de lire la version qui tourne : `{service, run}` (la
   sortie d'une commande) ou `{service, label}` (une étiquette de l'image).

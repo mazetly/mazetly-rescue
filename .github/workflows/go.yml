@@ -14,9 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Latest patch of the release, not the go.mod minimum: what we build and
+      # scan must carry the newest standard library fixes.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27"
+          check-latest: true
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
@@ -33,6 +36,20 @@ jobs:
         with:
           name: go-coverage
           path: coverage.out
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          check-latest: true
+
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+
+      - run: govulncheck ./...
 
   sonarqube:
     runs-on: ubuntu-latest

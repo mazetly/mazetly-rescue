@@ -96,3 +96,19 @@ func TestParseRejects(t *testing.T) {
 		}
 	}
 }
+
+// Compose prints $$ for a literal $ in x-* fields: commands get a single $.
+func TestUnescapesDollars(t *testing.T) {
+	c := strings.Replace(config, "- echo db", "- echo $$HOME", 1)
+	c = strings.Replace(c, "label: org.opencontainers.image.version", "run: php -r 'echo $$OC_Version;'", 1)
+	p, err := Parse("/srv/kit", []byte(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Hooks("post_restore")[2].Run; got != "echo $HOME" {
+		t.Errorf("hook %q", got)
+	}
+	if got := p.Version.Run; got != "php -r 'echo $OC_Version;'" {
+		t.Errorf("version %q", got)
+	}
+}

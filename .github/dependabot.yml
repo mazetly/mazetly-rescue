@@ -1,0 +1,48 @@
+version: 2
+updates:
+  # Go modules (the tool)
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    groups:
+      # Majors are deliberately left out so they open as individual PRs
+      # instead of riding along unreviewed inside a large group diff.
+      go-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions workflows
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+
+  # The recipes' images. Every bump runs the round trip of that application,
+  # so a new release that breaks backup or restore shows up as a red PR.
+  - package-ecosystem: docker-compose
+    directories:
+      - "/apps/*"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    groups:
+      # Majors (Nextcloud 33 to 34, PostgreSQL 17 to 18...) open as individual
+      # PRs: they often need a recipe change, not just a new tag.
+      recipe-images:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

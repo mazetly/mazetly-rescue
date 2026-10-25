@@ -116,6 +116,9 @@ what a backup needs. Docker ignores them: the file runs as is with
 - **`x-mazetly.upgrade.renew_anon_volumes`**: the image copies its code into an
   anonymous volume once only, so a new image needs
   `docker compose up --renew-anon-volumes`.
+- **`$` in commands**: Compose interpolates `x-*` fields too, so a recipe
+  writes `$$` for a literal `$`, and `docker compose config` prints it still
+  escaped: the tool turns `$$` back into `$` before running a command.
 - **`x-mazetly` at the top level**: `app`, the application's name, and
   `version`, how to read the running version: `{service, run}` (a command's
   output) or `{service, label}` (a label of the image).

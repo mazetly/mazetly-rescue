@@ -66,16 +66,18 @@ run_hooks() {
 		compose exec -T ${user:+-u "$user"} "$service" sh -c "$cmd"
 	done 3< <(jq -r --arg ph "$phase" '.services | to_entries[]
 		| .key as $s | (.value."x-mazetly".hooks[$ph] // [])[]
-		| if type == "string" then [$s, "", .] else [$s, (.user // ""), .run] end | @tsv' <<<"$CONFIG")
+		| if type == "string" then [$s, "", .] else [$s, (.user // ""), .run] end
+		| .[2] |= gsub("\\$\\$"; "$") | @tsv' <<<"$CONFIG")
 }
 
-# The application's version, read as its recipe says.
+# The application's version, read as its recipe says. Compose prints $$ for a
+# literal $ in x-* fields, hence the gsub here and in run_hooks.
 version() {
 	local service label run
 	service=$(jq -r '."x-mazetly".version.service // empty' <<<"$CONFIG")
 	[ -n "$service" ] || return 0
 	label=$(jq -r '."x-mazetly".version.label // empty' <<<"$CONFIG")
-	run=$(jq -r '."x-mazetly".version.run // empty' <<<"$CONFIG")
+	run=$(jq -r '."x-mazetly".version.run // empty | gsub("\\$\\$"; "$")' <<<"$CONFIG")
 	if [ -n "$label" ]; then
 		docker inspect -f "{{index .Config.Labels \"$label\"}}" "$(compose ps -q "$service")"
 	else
