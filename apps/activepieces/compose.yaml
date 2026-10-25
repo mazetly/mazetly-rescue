@@ -4,7 +4,7 @@
 # piece cache is rebuilt on start: neither is backed up.
 services:
   postgres:
-    image: pgvector/pgvector:0.8.0-pg14
+    image: pgvector/pgvector:0.8.7-pg14
     restart: unless-stopped
     env_file: .env
     environment:
