@@ -21,10 +21,18 @@ Il vous faut :
 
 Projet en conception. Le format des sauvegardes est décrit dans [SPEC.fr.md](SPEC.fr.md).
 
-| Application | État |
-|---|---|
-| Matomo | format du kit testé en CI ; outil prévu (v1) |
-| Nextcloud | prévu (v2) |
+La recette de chaque application est testée de bout en bout en CI : sauvegardée,
+restaurée sur une machine neuve avec la seule clé client, vérifiée, puis mise à
+jour. L'outil qui fera tout cela pour vous est la prochaine étape.
+
+| Application | Base | Recette |
+|---|---|---|
+| Matomo | MariaDB | [apps/matomo](apps/matomo) |
+| GateCHA | SQLite | [apps/gatecha](apps/gatecha) |
+| Uptime Kuma | SQLite | [apps/uptime-kuma](apps/uptime-kuma) |
+| Healthchecks | PostgreSQL | [apps/healthchecks](apps/healthchecks) |
+| Activepieces | PostgreSQL | [apps/activepieces](apps/activepieces) |
+| Nextcloud | MariaDB | [apps/nextcloud](apps/nextcloud) |
 
 ## Licence
 

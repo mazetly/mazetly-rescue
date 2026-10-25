@@ -21,10 +21,18 @@ You need:
 
 Under design. The backup format is described in [SPEC.md](SPEC.md).
 
-| Application | Status |
-|---|---|
-| Matomo | kit format tested in CI; tool planned (v1) |
-| Nextcloud | planned (v2) |
+Each application's recipe is tested end to end in CI: backed up, restored on a
+fresh machine with the customer key only, checked, then upgraded. The tool that
+will do this for you is next.
+
+| Application | Database | Recipe |
+|---|---|---|
+| Matomo | MariaDB | [apps/matomo](apps/matomo) |
+| GateCHA | SQLite | [apps/gatecha](apps/gatecha) |
+| Uptime Kuma | SQLite | [apps/uptime-kuma](apps/uptime-kuma) |
+| Healthchecks | PostgreSQL | [apps/healthchecks](apps/healthchecks) |
+| Activepieces | PostgreSQL | [apps/activepieces](apps/activepieces) |
+| Nextcloud | MariaDB | [apps/nextcloud](apps/nextcloud) |
 
 ## License
 

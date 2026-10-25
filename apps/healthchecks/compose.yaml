@@ -1,0 +1,36 @@
+# Healthchecks recipe. Everything it keeps is in PostgreSQL: no volume to back
+# up besides the database. SECRET_KEY (in .env) signs sessions and links.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      retries: 60
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    x-mazetly:
+      database:
+        engine: postgres
+
+  web:
+    image: healthchecks/healthchecks:v5.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB: postgres
+      DB_HOST: db
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      GUNICORN_BIND: 0.0.0.0:8000
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${RESCUE_PORT:-8080}:8000"
+
+volumes:
+  db-data:

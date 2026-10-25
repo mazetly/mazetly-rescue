@@ -1,0 +1,59 @@
+# Nextcloud recipe. Nextcloud's code comes from the image; config, user files,
+# extra apps and themes are mounted under ./volumes/. Backups run in
+# maintenance mode so the database and the files match. No automatic install
+# variables: on restore, the image must not try to install over the config.
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      retries: 60
+    volumes:
+      - db-data:/var/lib/mysql
+    x-mazetly:
+      database:
+        engine: mariadb
+
+  app:
+    image: nextcloud:33-apache
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: ${MARIADB_DATABASE}
+      MYSQL_USER: ${MARIADB_USER}
+      MYSQL_PASSWORD: ${MARIADB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${RESCUE_PORT:-8080}:80"
+    volumes:
+      - ./volumes/config:/var/www/html/config
+      - ./volumes/data:/var/www/html/data
+      - ./volumes/custom_apps:/var/www/html/custom_apps
+      - ./volumes/themes:/var/www/html/themes
+    x-mazetly:
+      hooks:
+        pre_backup:
+          - user: www-data
+            run: php occ maintenance:mode --on
+        post_backup:
+          - user: www-data
+            run: php occ maintenance:mode --off
+        post_restore:
+          - user: www-data
+            run: php occ maintenance:mode --off
+          - user: www-data
+            run: php occ upgrade --no-interaction
+          # Tells sync clients the server was restored, so they resync
+          # instead of deleting files that are newer on their side.
+          - user: www-data
+            run: php occ maintenance:data-fingerprint
+
+volumes:
+  db-data:

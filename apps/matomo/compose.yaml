@@ -1,0 +1,48 @@
+# Matomo recipe. Matomo's code comes from the image; only what a user can change
+# is mounted under ./volumes/: the local config, third-party plugins and
+# misc/user. The Marketplace always installs into plugins/, among the bundled
+# plugins, so third-party plugins are placed in their own directory instead.
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      retries: 60
+    volumes:
+      - db-data:/var/lib/mysql
+    x-mazetly:
+      database:
+        engine: mariadb
+
+  app:
+    image: matomo:5-apache
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MATOMO_PLUGIN_DIRS: /var/www/html/extra-plugins;extra-plugins
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${RESCUE_PORT:-8080}:80"
+    volumes:
+      - ./volumes/config/config.ini.php:/var/www/html/config/config.ini.php
+      - ./volumes/plugins:/var/www/html/extra-plugins
+      - ./volumes/misc-user:/var/www/html/misc/user
+    x-mazetly:
+      hooks:
+        post_restore:
+          - user: www-data
+            run: php console core:update --yes
+        post_upgrade:
+          - user: www-data
+            run: php console core:update --yes
+      upgrade:
+        # The image copies its code into an anonymous volume once only.
+        renew_anon_volumes: true
+
+volumes:
+  db-data:

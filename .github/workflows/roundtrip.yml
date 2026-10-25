@@ -1,5 +1,6 @@
-# Public proof: a Matomo kit is backed up on one machine, then restored on a
-# fresh one with the customer key only, by following the kit's RESTORE.md.
+# Public proof: for every application, a reference instance is backed up on one
+# machine, then restored on a fresh one with the customer key only, checked,
+# and upgraded.
 name: Round trip
 on:
   push:
@@ -11,31 +12,41 @@ on:
 permissions:
   contents: read
 env:
-  # Test-only keys for a throwaway repository.
+  # Test-only keys for throwaway repositories.
   RESTIC_CUSTOMER_PASSWORD: rescue-ci-customer
 jobs:
   backup:
-    name: Back up a reference Matomo
+    name: Back up ${{ matrix.app }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [matomo, gatecha, uptime-kuma, healthchecks, activepieces, nextcloud]
     steps:
       - uses: actions/checkout@v5
-      - run: test/matomo/roundtrip.sh backup "$RUNNER_TEMP/instance" "$RUNNER_TEMP/repo"
+      - run: test/roundtrip.sh ${{ matrix.app }} backup "$RUNNER_TEMP/instance" "$RUNNER_TEMP/repo"
         env:
           RESTIC_MAZETLY_PASSWORD: rescue-ci-mazetly
       - uses: actions/upload-artifact@v4
         with:
-          name: restic-repository
+          name: restic-${{ matrix.app }}
           path: ${{ runner.temp }}/repo
           retention-days: 1
 
   restore:
-    name: Restore it on a fresh machine
+    name: Restore ${{ matrix.app }} on a fresh machine
     needs: backup
+    # One application's failed backup must not hide the others' restores.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [matomo, gatecha, uptime-kuma, healthchecks, activepieces, nextcloud]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
-          name: restic-repository
+          name: restic-${{ matrix.app }}
           path: ${{ runner.temp }}/repo
-      - run: test/matomo/roundtrip.sh restore "$RUNNER_TEMP/restore" "$RUNNER_TEMP/repo"
+      - run: test/roundtrip.sh ${{ matrix.app }} restore "$RUNNER_TEMP/restore" "$RUNNER_TEMP/repo"

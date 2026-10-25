@@ -1,0 +1,16 @@
+# Uptime Kuma recipe. Everything it keeps lives in /app/data: the SQLite
+# database, its database choice (db-config.json) and uploaded files.
+services:
+  kuma:
+    image: louislam/uptime-kuma:2
+    restart: unless-stopped
+    environment:
+      UPTIME_KUMA_DB_TYPE: sqlite
+    ports:
+      - "${RESCUE_PORT:-8080}:3001"
+    volumes:
+      - ./volumes/data:/app/data
+    x-mazetly:
+      database:
+        engine: sqlite
+        path: /app/data/kuma.db

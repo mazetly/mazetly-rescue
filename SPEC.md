@@ -8,7 +8,7 @@ only a convenient way to follow this procedure, not a requirement for following 
 
 ## Principles
 
-1. **The kit is self-sufficient.** With a server, Docker and restic, a competent
+1. **The kit is self-sufficient.** With a server, Docker, restic, zstd and jq, a competent
    person must be able to restore the application by reading `RESTORE.md`, without
    the tool, without an account, without any Mazetly API.
 2. **The kit is the backup.** Mazetly has no other internal format. Every restore
@@ -72,107 +72,106 @@ same two kinds of key: Mazetly's to write, the customer's to restore.
 
 ## Snapshot contents
 
-Each restic snapshot contains a single `kit/` directory:
+An instance's directory is its kit. Each restic snapshot contains it whole:
 
 ```
 kit/
-├── manifest.json        machine-readable description of the kit (see below)
-├── RESTORE.md           human procedure, specific to this application
-├── compose.yaml         services, images pinned by digest
-├── .env                 instance variables and secrets
-├── db/
-│   └── <service>.sql.zst  logical dump of each database
-└── volumes/
-    └── <name>/          contents of each persistent volume
+├── compose.yaml   the recipe: services, mounts and x-mazetly fields,
+│                  images pinned by digest
+├── .env           settings and secrets
+├── db/            one export per database (<service>.sql.zst or
+│                  <service>.sqlite.zst)
+├── volumes/       what a user can change, mounted from here
+├── manifest.json  what the backup produced (see below)
+├── RESTORE.md     the generic procedure
+└── NOTES.md       what is specific to this application
 ```
 
 `.env` holds secrets in clear text **inside** the snapshot: restic encrypts the
-whole, so there is no second encryption layer to manage.
+whole, so there is no second encryption layer to manage. Live database files
+under `volumes/` (SQLite and its `-wal`/`-shm`) are excluded: `db/` holds their
+consistent copy.
+
+## Recipes: `x-mazetly` in `compose.yaml`
+
+The tool knows no application. A recipe is the application's `compose.yaml`,
+in [`apps/<app>/`](apps), with `x-mazetly` fields where Compose has no word for
+what a backup needs. Docker ignores them: the file runs as is with
+`docker compose up`.
+
+- **The code comes from the image, never from the backup.** Only what a user
+  can change is bind-mounted, from `./volumes/`. Everything there is backed up;
+  named volumes are not, so databases go through an export instead.
+- **`x-mazetly.database`** on a database service: `engine` is `mariadb`,
+  `mysql`, `postgres` or `sqlite`. The tool knows how to export and import each
+  one; credentials come from the image's usual variables (`MARIADB_*`, `MYSQL_*`,
+  `POSTGRES_*`). For `sqlite`, `path` is the file inside the container; it is
+  copied with SQLite's online backup API, consistent while the application
+  writes.
+- **`x-mazetly.hooks`** on any service: commands run in that service, as a
+  string or `{user, run}`, at `pre_backup`, `post_backup`, `post_restore` and
+  `post_upgrade`.
+- **`x-mazetly.upgrade.renew_anon_volumes`**: the image copies its code into an
+  anonymous volume once only, so a new image needs
+  `docker compose up --renew-anon-volumes`.
+
+What no field can say (adjusting for a new domain, an application's quirks)
+goes in plain text in `NOTES.md`.
+
+Supporting a new application means writing its `compose.yaml`, its `NOTES.md`
+and its round-trip test (`apps/<app>/test.sh`): what to create, what to find
+again. The test runner, [`test/roundtrip.sh`](test/roundtrip.sh), is the same for
+every application and reads nothing but `x-mazetly`.
 
 ## `manifest.json`
+
+What the backup produced; everything else is in `compose.yaml`.
 
 ```json
 {
   "format": "mazetly-kit/0",
   "app": "matomo",
-  "app_version": "5.x.y",
+  "app_version": "5.14.2",
   "created_at": "2026-10-25T03:00:00Z",
-  "instance": "acme-matomo",
-  "domain": "stats.acme.fr",
   "images": {
     "app": "matomo@sha256:…",
     "db": "mariadb@sha256:…"
   },
   "databases": [
     { "service": "db", "engine": "mariadb", "file": "db/db.sql.zst", "sha256": "…" }
-  ],
-  "volumes": [
-    { "path": "volumes/config/config.ini.php", "mount": "/var/www/html/config/config.ini.php" },
-    { "path": "volumes/plugins", "mount": "/var/www/html/extra-plugins" },
-    { "path": "volumes/misc-user", "mount": "/var/www/html/misc/user" }
-  ],
-  "post_restore": [
-    "docker compose exec -T app ./console core:update --yes"
-  ],
-  "consistency": "mysqldump --single-transaction"
+  ]
 }
 ```
 
 Images are pinned by digest: you restore **exactly** the backed-up version, then
 upgrade if you wish, never the other way round.
 
-## Recipes
+## Applications
 
-The tool knows no application. What is specific to one lives in a recipe,
-`recipes/<app>.yaml`:
+Each one is backed up on an older release, restored on a fresh machine with the
+customer key only, checked, then upgraded, on every change.
 
-- **services and images**: which image, which version track;
-- **databases**: engine (`mariadb`, `mysql`, `postgres`, `sqlite`) and where its
-  credentials are; the tool knows how to dump and import each engine;
-- **volumes**: only the paths a user can change; the code always comes from the
-  image, never from the backup;
-- **hooks**: commands to run before or after a backup or a restore (maintenance
-  mode, migrations);
-- **upgrade**: what a new image needs to take effect;
-- **domain change**: what to adjust when the instance moves to another domain;
-- **checks**: what proves the restored instance works.
+| Application | Database | What the test proves | Upgrade tested |
+|---|---|---|---|
+| [Matomo](apps/matomo) | MariaDB | site, visits, a third-party plugin, a custom logo | 5.13 → 5.14 |
+| [GateCHA](apps/gatecha) | SQLite | admin login, an API key, its HMAC signature unchanged | 0.12 → 0.13 |
+| [Uptime Kuma](apps/uptime-kuma) | SQLite | admin login, a monitor | 2.0.0 → 2.x |
+| [Healthchecks](apps/healthchecks) | PostgreSQL | user, a check, its ping URL and history | v4.4 → v5.0 |
+| [Activepieces](apps/activepieces) | PostgreSQL | sign-in, a flow, a variable encrypted with `AP_ENCRYPTION_KEY` | 0.92.2 → 0.92.3 |
+| [Nextcloud](apps/nextcloud) | MariaDB | account, a file over WebDAV, backup in maintenance mode | 32 → 33 |
 
-When a kit is produced, the recipe is instantiated into `manifest.json` and
-`RESTORE.md`: a kit never depends on the recipe that produced it. Supporting a new
-application means writing its recipe and its round-trip test, not changing the
-tool.
+What they taught the format:
 
-### Matomo (v1)
-
-[`recipes/matomo.yaml`](recipes/matomo.yaml), proven by
-[`test/matomo/roundtrip.sh`](test/matomo/roundtrip.sh).
-
-- **Backed up**: database dump (`mysqldump --single-transaction`, consistent
-  without downtime), `config/config.ini.php` (mounted as a single file),
-  third-party plugins, `misc/user/`. Everything else is Matomo's code and comes
-  from the image: a kit weighs about as much as its dump.
-- **Third-party plugins**: the Marketplace always installs into `plugins/`, among
-  the bundled plugins, where the image's code lives. Third-party plugins are
-  therefore placed in their own directory, loaded through `MATOMO_PLUGIN_DIRS`;
-  Marketplace installs from the Matomo interface are not kept.
-- **Upgrade**: the image copies its code into an anonymous volume once only;
-  a new image needs `docker compose up --renew-anon-volumes`, then
-  `console core:update`.
-- **To adjust** if the domain changes: `trusted_hosts[]` in `config.ini.php`.
-
-### Nextcloud (v2)
-
-- **Backup**: `occ maintenance:mode --on`, database dump, `data/` directory
-  (including server-side encryption keys if enabled), `config/config.php`
-  (`instanceid`, `passwordsalt`, `secret`), `custom_apps/`, then
-  `occ maintenance:mode --off`. The maintenance window lasts as long as the dump;
-  `data/` is copied afterwards, with the known risk of files changing during the
-  copy, which `files:scan` fixes.
-- **Restore**: same version, import, `occ maintenance:data-fingerprint`,
-  `occ files:scan --all`, adjust `trusted_domains` and `overwrite.cli.url`,
-  reconfigure Redis and cron.
-- **Size**: `data/` can weigh hundreds of GB; the first copy to the customer's
-  bucket has to be scheduled.
+- **Matomo**: the Marketplace installs plugins among Matomo's own code, so
+  third-party plugins get their own directory (`MATOMO_PLUGIN_DIRS`); the image
+  needs `--renew-anon-volumes` to upgrade.
+- **GateCHA, Uptime Kuma**: a live SQLite file must not be copied as is; it is
+  excluded and replaced by a consistent copy.
+- **Activepieces**: an encryption key in `.env` and the data it encrypts must
+  come back together; the test reveals an encrypted value to prove it.
+- **Nextcloud**: hooks run around the backup (maintenance mode); after an
+  upgrade, `post_restore` must not run (it would make every sync client resync),
+  hence `post_upgrade`.
 
 ## Target environment
 
@@ -188,15 +187,16 @@ The tool installs Docker and restic from their official sources if needed.
 ## Decisions
 
 - **Backup: restic**, for its multiple keys and documented format.
+- **Recipes: `x-mazetly` fields in `compose.yaml`**, not a separate file that
+  would have to be kept in step with it.
 - **Tool: Go binary**, a single file for Linux amd64 and arm64. restic is not a
   library (its code lives in `internal/`): the tool calls the official restic
   binary, downloading and verifying it (SHA-256 checksum and signature) if missing.
+  `docker compose config --format json` drops `x-*` fields; the tool reads the
+  YAML output, or uses `compose-go` directly.
 - **Languages: English and French.** English is the reference for the
   specification (`SPEC.md`); French is its translation (`SPEC.fr.md`). The tool
   speaks the system language (`LANG`), English by default; `RESTORE.md` is written
   in the customer's language.
-
-- **Public proof**: the [Round trip](.github/workflows/roundtrip.yml) CI installs
-  a reference Matomo, produces its kit and backs it up, then restores it on a fresh
-  machine with the customer key only, by following the kit's `RESTORE.md`. It runs
-  on every change and every week (`test/matomo/roundtrip.sh`).
+- **Public proof**: the [Round trip](.github/workflows/roundtrip.yml) CI runs the
+  table above on every change and every week.

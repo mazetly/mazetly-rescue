@@ -1,0 +1,18 @@
+# GateCHA recipe. A single Go binary; its SQLite database and nothing else
+# live in /app/data. GATECHA_SECRET_KEY (in .env) signs admin sessions.
+services:
+  gatecha:
+    image: ghcr.io/upellift99/gatecha:0.13.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GATECHA_LISTEN_ADDR: ":8080"
+      GATECHA_DB_DSN: /app/data/gatecha.db
+    ports:
+      - "${RESCUE_PORT:-8080}:8080"
+    volumes:
+      - ./volumes/data:/app/data
+    x-mazetly:
+      database:
+        engine: sqlite
+        path: /app/data/gatecha.db

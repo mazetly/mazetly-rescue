@@ -1,0 +1,50 @@
+# Activepieces recipe. Flows, users and connections are in PostgreSQL; the
+# connections' credentials are encrypted with AP_ENCRYPTION_KEY (in .env), so
+# the database is useless without it. Redis only holds the job queue and the
+# piece cache is rebuilt on start: neither is backed up.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg14
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${AP_POSTGRES_DATABASE}
+      POSTGRES_USER: ${AP_POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${AP_POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      retries: 60
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    x-mazetly:
+      database:
+        engine: postgres
+
+  redis:
+    image: redis:7.4
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/activepieces/activepieces:0.92.3
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AP_POSTGRES_HOST: postgres
+      AP_POSTGRES_PORT: "5432"
+      AP_REDIS_HOST: redis
+      AP_REDIS_PORT: "6379"
+      AP_ENVIRONMENT: prod
+      AP_EXECUTION_MODE: UNSANDBOXED
+      AP_ENGINE_EXECUTABLE_PATH: dist/packages/engine/main.js
+      AP_TELEMETRY_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "${RESCUE_PORT:-8080}:80"
+
+volumes:
+  postgres-data:
