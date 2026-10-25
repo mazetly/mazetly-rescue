@@ -26,6 +26,12 @@ updates:
       day: monday
       time: "06:00"
     open-pull-requests-limit: 5
+    groups:
+      # init and analyze must run the same version: bumped apart, each PR
+      # fails CodeQL with "Loaded a configuration file for version ...".
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # The recipes' images. Every bump runs the round trip of that application,
   # so a new release that breaks backup or restore shows up as a red PR.
