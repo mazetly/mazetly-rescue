@@ -2,7 +2,9 @@
 # up besides the database. SECRET_KEY (in .env) signs sessions and links.
 services:
   db:
-    image: postgres:17
+    image: postgres:18
+    # From 18 on, the image keeps its cluster in a versioned directory under
+    # /var/lib/postgresql and refuses to start on a volume mounted at .../data.
     restart: unless-stopped
     env_file: .env
     healthcheck:
@@ -10,7 +12,7 @@ services:
       interval: 2s
       retries: 60
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - db-data:/var/lib/postgresql
     x-mazetly:
       database:
         engine: postgres
