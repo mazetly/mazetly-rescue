@@ -71,3 +71,32 @@ func TestRepoOf(t *testing.T) {
 		}
 	}
 }
+
+func TestReadManifestErrors(t *testing.T) {
+	if _, err := readManifest(t.TempDir()); err == nil {
+		t.Error("a kit without manifest.json accepted")
+	}
+	if _, err := parseManifest([]byte("{")); err == nil {
+		t.Error("an unreadable manifest accepted")
+	}
+	if _, err := fileSHA256(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("the checksum of a missing file")
+	}
+}
+
+func TestPinImagesRefuses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "compose.yaml")
+	if err := os.WriteFile(path, []byte("services:\n  app:\n    image: matomo:5\n  worker:\n    image: matomo:5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	current := map[string]string{"app": "matomo:5", "worker": "matomo:5"}
+	if err := pinImages(path, current, map[string]string{"app": "matomo@sha256:aa", "worker": "matomo@sha256:bb"}); err == nil {
+		t.Error("services sharing an image pinned to different digests")
+	}
+	if err := pinImages(path, current, map[string]string{"cron": "matomo@sha256:aa"}); err == nil {
+		t.Error("a service the recipe does not have")
+	}
+	if err := pinImages(filepath.Join(t.TempDir(), "missing.yaml"), current, nil); err == nil {
+		t.Error("a missing compose.yaml")
+	}
+}

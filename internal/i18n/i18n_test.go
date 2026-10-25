@@ -27,3 +27,44 @@ func verbs(s string) string {
 	}
 	return b.String()
 }
+
+func TestT(t *testing.T) {
+	defer func(was bool) { french = was }(french)
+	french = false
+	if got := T("backup.done", "matomo", "5.1"); got != "Backup of matomo 5.1 done." {
+		t.Errorf("English: %q", got)
+	}
+	french = true
+	if got := T("backup.done", "matomo", "5.1"); got != "Sauvegarde de matomo 5.1 terminée." {
+		t.Errorf("French: %q", got)
+	}
+}
+
+func TestTPanicsOnAnUnknownKey(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("no panic")
+		}
+	}()
+	T("no.such.message")
+}
+
+func TestIsFrench(t *testing.T) {
+	for _, c := range []struct {
+		all, messages, lang string
+		want                bool
+	}{
+		{"", "", "fr_FR.UTF-8", true},
+		{"", "", "en_US.UTF-8", false},
+		{"", "", "", false},
+		{"", "fr_BE.UTF-8", "en_US.UTF-8", true},
+		{"C", "fr_FR.UTF-8", "fr_FR.UTF-8", false},
+	} {
+		t.Setenv("LC_ALL", c.all)
+		t.Setenv("LC_MESSAGES", c.messages)
+		t.Setenv("LANG", c.lang)
+		if got := isFrench(); got != c.want {
+			t.Errorf("LC_ALL=%q LC_MESSAGES=%q LANG=%q: %v", c.all, c.messages, c.lang, got)
+		}
+	}
+}
