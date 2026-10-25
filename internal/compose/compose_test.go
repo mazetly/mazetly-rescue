@@ -85,13 +85,18 @@ func TestHostPath(t *testing.T) {
 
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
-		"no app":         strings.Replace(config, "app: demo", "", 1),
-		"unknown engine": strings.Replace(config, "engine: mariadb", "engine: oracle", 1),
-		"unknown phase":  strings.Replace(config, "post_restore:\n          - echo", "after_restore:\n          - echo", 1),
-		"sqlite unbound": strings.Replace(config, "path: /app/data/app.db", "path: /elsewhere/app.db", 1),
-		"bad version":    strings.Replace(config, "label: org", "run: x\n    label: org", 1),
+		"no app":          strings.Replace(config, "app: demo", "", 1),
+		"unknown engine":  strings.Replace(config, "engine: mariadb", "engine: oracle", 1),
+		"unknown phase":   strings.Replace(config, "post_restore:\n          - echo", "after_restore:\n          - echo", 1),
+		"sqlite unbound":  strings.Replace(config, "path: /app/data/app.db", "path: /elsewhere/app.db", 1),
+		"bad version":     strings.Replace(config, "label: org", "run: x\n    label: org", 1),
+		"empty version":   strings.Replace(config, "    label: org.opencontainers.image.version\n", "", 1),
+		"version service": strings.Replace(config, "    service: app\n", "    service: nope\n", 1),
 	}
 	for name, c := range cases {
+		if c == config {
+			t.Fatalf("%s: the replacement did not apply", name)
+		}
 		if _, err := Parse("/srv/kit", []byte(c)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}

@@ -159,32 +159,49 @@ func Parse(dir string, config []byte) (*Project, error) {
 		return nil, errors.New("the compose file has no x-mazetly.app")
 	}
 	for _, name := range p.ServiceNames() {
-		s := p.Services[name]
-		if db := s.X.Database; db != nil {
-			if !slices.Contains(Engines, db.Engine) {
-				return nil, fmt.Errorf("service %s: unknown database engine %q", name, db.Engine)
-			}
-			if db.Engine == "sqlite" {
-				if _, err := p.HostPath(name, db.Path); err != nil {
-					return nil, err
-				}
-			}
-		}
-		for phase := range s.X.Hooks {
-			if !slices.Contains(Phases, phase) {
-				return nil, fmt.Errorf("service %s: unknown hook phase %q", name, phase)
-			}
+		if err := p.checkService(name); err != nil {
+			return nil, err
 		}
 	}
-	if v := p.Version; v != nil {
-		if _, ok := p.Services[v.Service]; !ok {
-			return nil, fmt.Errorf("x-mazetly.version: unknown service %q", v.Service)
-		}
-		if (v.Run == "") == (v.Label == "") {
-			return nil, errors.New("x-mazetly.version needs either run or label")
-		}
+	if err := p.checkVersion(); err != nil {
+		return nil, err
 	}
 	return p, nil
+}
+
+// checkService checks a service's x-mazetly fields.
+func (p *Project) checkService(name string) error {
+	s := p.Services[name]
+	if db := s.X.Database; db != nil {
+		if !slices.Contains(Engines, db.Engine) {
+			return fmt.Errorf("service %s: unknown database engine %q", name, db.Engine)
+		}
+		if db.Engine == "sqlite" {
+			if _, err := p.HostPath(name, db.Path); err != nil {
+				return err
+			}
+		}
+	}
+	for phase := range s.X.Hooks {
+		if !slices.Contains(Phases, phase) {
+			return fmt.Errorf("service %s: unknown hook phase %q", name, phase)
+		}
+	}
+	return nil
+}
+
+func (p *Project) checkVersion() error {
+	v := p.Version
+	if v == nil {
+		return nil
+	}
+	if _, ok := p.Services[v.Service]; !ok {
+		return fmt.Errorf("x-mazetly.version: unknown service %q", v.Service)
+	}
+	if (v.Run == "") == (v.Label == "") {
+		return errors.New("x-mazetly.version needs either run or label")
+	}
+	return nil
 }
 
 // ServiceNames returns the service names in a stable order: hooks, exports and
