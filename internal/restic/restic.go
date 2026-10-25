@@ -26,6 +26,10 @@ var passEnv = []string{"AWS_", "B2_", "AZURE_", "GOOGLE_", "OS_", "ST_", "RCLONE
 // hand: it cannot change.
 const kitTag = "mazetly-kit"
 
+// noLock is passed to every read: on Mazetly storage the customer's
+// credentials are read-only, so restic could not write its lock.
+const noLock = "--no-lock"
+
 type Repo struct {
 	Location string
 	Password string
@@ -159,7 +163,7 @@ type Snapshot struct {
 
 // Snapshots lists the kit snapshots, oldest first.
 func (r Repo) Snapshots() ([]Snapshot, error) {
-	cmd, err := r.command(nil, "snapshots", "--no-lock", "--json", "--tag", kitTag)
+	cmd, err := r.command(nil, "snapshots", noLock, "--json", "--tag", kitTag)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +181,12 @@ func (r Repo) Snapshots() ([]Snapshot, error) {
 // Restore restores the kit of a snapshot into target, which must exist.
 // restic runs as root, so files keep their owners.
 func (r Repo) Restore(s Snapshot, target string) error {
-	return r.run([]string{target + ":/restore"}, "restore", s.ID+":"+s.Paths[0], "--no-lock", "--target", "/restore")
+	return r.run([]string{target + ":/restore"}, "restore", s.ID+":"+s.Paths[0], noLock, "--target", "/restore")
 }
 
 // Dump streams one file of a snapshot's kit to w.
 func (r Repo) Dump(s Snapshot, file string, w io.Writer) error {
-	cmd, err := r.command(nil, "dump", "--no-lock", s.ID, s.Paths[0]+"/"+file)
+	cmd, err := r.command(nil, "dump", noLock, s.ID, s.Paths[0]+"/"+file)
 	if err != nil {
 		return err
 	}
