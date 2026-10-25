@@ -59,88 +59,24 @@ func main() {
 
 func run(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
-	repoFlag := fs.String("repo", os.Getenv("RESTIC_REPOSITORY"), "restic repository")
-	passwordFile := fs.String("password-file", os.Getenv("RESTIC_PASSWORD_FILE"), "file holding the repository password")
+	c := cli{
+		fs:           fs,
+		repo:         fs.String("repo", os.Getenv("RESTIC_REPOSITORY"), "restic repository"),
+		passwordFile: fs.String("password-file", os.Getenv("RESTIC_PASSWORD_FILE"), "file holding the repository password"),
+	}
 	switch command {
 	case "restore":
-		target := fs.String("target", "", "directory to restore into (empty or absent)")
-		snapshot := fs.String("snapshot", "latest", "snapshot to restore")
-		yes := fs.Bool("yes", false, "start without asking, after the review")
-		allowUnsafe := fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
-		fs.Parse(args)
-		if *target == "" {
-			return errors.New("restore needs --target")
-		}
-		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		return rescue.Restore(repo, *target, rescue.RestoreOptions{Snapshot: *snapshot, Yes: *yes, AllowUnsafe: *allowUnsafe})
+		return c.restore(args)
 	case "verify":
-		snapshot := fs.String("snapshot", "latest", "snapshot to verify")
-		allowUnsafe := fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
-		fs.Parse(args)
-		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		return rescue.Verify(repo, *snapshot, *allowUnsafe)
+		return c.verify(args)
 	case "copy":
-		to := fs.String("to", "", "destination repository")
-		toPasswordFile := fs.String("to-password-file", "", "file holding the destination's password")
-		initDst := fs.Bool("init", false, "create the destination first")
-		keyFile := fs.String("customer-key-file", "", "with --init: file holding the customer key (generated when absent)")
-		fs.Parse(args)
-		if *to == "" {
-			return errors.New("copy needs --to")
-		}
-		src, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		dst, err := openRepo(*to, *toPasswordFile, "RESCUE_TO_PASSWORD")
-		if err != nil {
-			return err
-		}
-		var key string
-		if *initDst {
-			if key, err = customerKey(*keyFile); err != nil {
-				return err
-			}
-		}
-		if err := rescue.Copy(src, dst, *initDst, key); err != nil {
-			return err
-		}
-		if *initDst && *keyFile == "" {
-			fmt.Printf("\n%s\n\n    %s\n\n", i18n.T("init.customer"), key)
-		}
-		return nil
+		return c.copy(args)
 	case "check":
-		maxAge := fs.Duration("max-age", 0, "fail when the latest backup is older (e.g. 26h)")
-		fs.Parse(args)
-		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		return rescue.Check(repo, *maxAge)
+		return c.check(args)
 	case "backup":
-		fs.Parse(args)
-		if fs.NArg() != 1 {
-			return errors.New("backup needs the instance directory")
-		}
-		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		return rescue.Backup(repo, fs.Arg(0))
+		return c.backup(args)
 	case "init":
-		keyFile := fs.String("customer-key-file", "", "file holding the customer key (generated when absent)")
-		fs.Parse(args)
-		repo, err := openRepo(*repoFlag, *passwordFile, "RESTIC_PASSWORD")
-		if err != nil {
-			return err
-		}
-		return initRepo(repo, *keyFile)
+		return c.initialize(args)
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -149,6 +85,110 @@ func run(command string, args []string) error {
 		os.Exit(2)
 		return nil
 	}
+}
+
+// cli holds the flags every command but version shares. Each command adds its
+// own flags to fs before parsing.
+type cli struct {
+	fs           *flag.FlagSet
+	repo         *string
+	passwordFile *string
+}
+
+// open opens the repository named by the flags, once they are parsed.
+func (c cli) open() (restic.Repo, error) {
+	return openRepo(*c.repo, *c.passwordFile, "RESTIC_PASSWORD")
+}
+
+func (c cli) restore(args []string) error {
+	target := c.fs.String("target", "", "directory to restore into (empty or absent)")
+	snapshot := c.fs.String("snapshot", "latest", "snapshot to restore")
+	yes := c.fs.Bool("yes", false, "start without asking, after the review")
+	allowUnsafe := c.fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
+	c.fs.Parse(args)
+	if *target == "" {
+		return errors.New("restore needs --target")
+	}
+	repo, err := c.open()
+	if err != nil {
+		return err
+	}
+	return rescue.Restore(repo, *target, rescue.RestoreOptions{Snapshot: *snapshot, Yes: *yes, AllowUnsafe: *allowUnsafe})
+}
+
+func (c cli) verify(args []string) error {
+	snapshot := c.fs.String("snapshot", "latest", "snapshot to verify")
+	allowUnsafe := c.fs.Bool("allow-unsafe", false, "accept a kit that reaches beyond its directory")
+	c.fs.Parse(args)
+	repo, err := c.open()
+	if err != nil {
+		return err
+	}
+	return rescue.Verify(repo, *snapshot, *allowUnsafe)
+}
+
+func (c cli) copy(args []string) error {
+	to := c.fs.String("to", "", "destination repository")
+	toPasswordFile := c.fs.String("to-password-file", "", "file holding the destination's password")
+	initDst := c.fs.Bool("init", false, "create the destination first")
+	keyFile := c.fs.String("customer-key-file", "", "with --init: file holding the customer key (generated when absent)")
+	c.fs.Parse(args)
+	if *to == "" {
+		return errors.New("copy needs --to")
+	}
+	src, err := c.open()
+	if err != nil {
+		return err
+	}
+	dst, err := openRepo(*to, *toPasswordFile, "RESCUE_TO_PASSWORD")
+	if err != nil {
+		return err
+	}
+	var key string
+	if *initDst {
+		if key, err = customerKey(*keyFile); err != nil {
+			return err
+		}
+	}
+	if err := rescue.Copy(src, dst, *initDst, key); err != nil {
+		return err
+	}
+	if *initDst && *keyFile == "" {
+		fmt.Printf("\n%s\n\n    %s\n\n", i18n.T("init.customer"), key)
+	}
+	return nil
+}
+
+func (c cli) check(args []string) error {
+	maxAge := c.fs.Duration("max-age", 0, "fail when the latest backup is older (e.g. 26h)")
+	c.fs.Parse(args)
+	repo, err := c.open()
+	if err != nil {
+		return err
+	}
+	return rescue.Check(repo, *maxAge)
+}
+
+func (c cli) backup(args []string) error {
+	c.fs.Parse(args)
+	if c.fs.NArg() != 1 {
+		return errors.New("backup needs the instance directory")
+	}
+	repo, err := c.open()
+	if err != nil {
+		return err
+	}
+	return rescue.Backup(repo, c.fs.Arg(0))
+}
+
+func (c cli) initialize(args []string) error {
+	keyFile := c.fs.String("customer-key-file", "", "file holding the customer key (generated when absent)")
+	c.fs.Parse(args)
+	repo, err := c.open()
+	if err != nil {
+		return err
+	}
+	return initRepo(repo, *keyFile)
 }
 
 // openRepo takes the password from a file, then from the environment
