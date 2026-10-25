@@ -33,9 +33,19 @@ holding this kit, and your restore key.
    jq -r '.post_restore[]' manifest.json | sh
    ```
 
-5. Point your domain at the server, put a TLS proxy in front of port 8080, and if
+5. To upgrade later, change the `app` image in `compose.yaml`, then:
+
+   ```sh
+   docker compose up -d --renew-anon-volumes app
+   docker compose exec -T app php console core:update --yes
+   ```
+
+   `--renew-anon-volumes` is required: the image copies Matomo's code into an
+   anonymous volume once only, and would otherwise keep running the old code.
+
+6. Point your domain at the server, put a TLS proxy in front of port 8080, and if
    the domain changed, update `trusted_hosts[]` in
-   `volumes/matomo-data/config/config.ini.php`. Re-create the archiving cron job:
+   `volumes/config/config.ini.php`. Re-create the archiving cron job:
 
    ```sh
    docker compose exec -T app php console core:archive

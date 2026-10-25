@@ -1,0 +1,53 @@
+# Draft recipe, format mazetly-recipe/0 (see SPEC.md, "Recipes").
+# Proven by test/matomo/roundtrip.sh; the Go tool will read this file instead.
+recipe: matomo
+format: mazetly-recipe/0
+
+services:
+  app:
+    image: matomo
+    track: 5-apache
+  db:
+    image: mariadb
+    track: "11.4"
+
+databases:
+  - service: db
+    engine: mariadb
+    env:
+      user: MARIADB_USER
+      password: MARIADB_PASSWORD
+      database: MARIADB_DATABASE
+
+# What a user can change. Everything else comes from the image.
+volumes:
+  - service: app
+    path: volumes/config/config.ini.php
+    mount: /var/www/html/config/config.ini.php
+    file: true
+  - service: app
+    path: volumes/plugins
+    mount: /var/www/html/extra-plugins
+  - service: app
+    path: volumes/misc-user
+    mount: /var/www/html/misc/user
+
+environment:
+  app:
+    MATOMO_PLUGIN_DIRS: /var/www/html/extra-plugins;extra-plugins
+
+hooks:
+  post_restore:
+    - service: app
+      run: php console core:update --yes
+
+upgrade:
+  # The image copies its code into an anonymous volume once only.
+  renew_anon_volumes: true
+
+domain_change:
+  - Update trusted_hosts[] in volumes/config/config.ini.php.
+
+checks:
+  - http: /index.php
+    expect: Sign in

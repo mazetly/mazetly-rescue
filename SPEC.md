@@ -107,7 +107,9 @@ whole, so there is no second encryption layer to manage.
     { "service": "db", "engine": "mariadb", "file": "db/db.sql.zst", "sha256": "…" }
   ],
   "volumes": [
-    { "name": "matomo-data", "path": "volumes/matomo-data", "mount": "/var/www/html" }
+    { "path": "volumes/config/config.ini.php", "mount": "/var/www/html/config/config.ini.php" },
+    { "path": "volumes/plugins", "mount": "/var/www/html/extra-plugins" },
+    { "path": "volumes/misc-user", "mount": "/var/www/html/misc/user" }
   ],
   "post_restore": [
     "docker compose exec -T app ./console core:update --yes"
@@ -119,15 +121,43 @@ whole, so there is no second encryption layer to manage.
 Images are pinned by digest: you restore **exactly** the backed-up version, then
 upgrade if you wish, never the other way round.
 
-## Per-application recipes
+## Recipes
+
+The tool knows no application. What is specific to one lives in a recipe,
+`recipes/<app>.yaml`:
+
+- **services and images**: which image, which version track;
+- **databases**: engine (`mariadb`, `mysql`, `postgres`, `sqlite`) and where its
+  credentials are; the tool knows how to dump and import each engine;
+- **volumes**: only the paths a user can change; the code always comes from the
+  image, never from the backup;
+- **hooks**: commands to run before or after a backup or a restore (maintenance
+  mode, migrations);
+- **upgrade**: what a new image needs to take effect;
+- **domain change**: what to adjust when the instance moves to another domain;
+- **checks**: what proves the restored instance works.
+
+When a kit is produced, the recipe is instantiated into `manifest.json` and
+`RESTORE.md`: a kit never depends on the recipe that produced it. Supporting a new
+application means writing its recipe and its round-trip test, not changing the
+tool.
 
 ### Matomo (v1)
 
-- **Backup**: `mysqldump --single-transaction --routines` (InnoDB tables,
-  consistent without downtime), `config/config.ini.php`, third-party plugins
-  (`plugins/` minus bundled ones), `misc/user/`.
-- **Restore**: start the database, import the dump, start Matomo at the same
-  version, check `./console core:version`, re-enable the archiving cron job.
+[`recipes/matomo.yaml`](recipes/matomo.yaml), proven by
+[`test/matomo/roundtrip.sh`](test/matomo/roundtrip.sh).
+
+- **Backed up**: database dump (`mysqldump --single-transaction`, consistent
+  without downtime), `config/config.ini.php` (mounted as a single file),
+  third-party plugins, `misc/user/`. Everything else is Matomo's code and comes
+  from the image: a kit weighs about as much as its dump.
+- **Third-party plugins**: the Marketplace always installs into `plugins/`, among
+  the bundled plugins, where the image's code lives. Third-party plugins are
+  therefore placed in their own directory, loaded through `MATOMO_PLUGIN_DIRS`;
+  Marketplace installs from the Matomo interface are not kept.
+- **Upgrade**: the image copies its code into an anonymous volume once only;
+  a new image needs `docker compose up --renew-anon-volumes`, then
+  `console core:update`.
 - **To adjust** if the domain changes: `trusted_hosts[]` in `config.ini.php`.
 
 ### Nextcloud (v2)
