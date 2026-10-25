@@ -137,6 +137,20 @@ done`)
 	return fake
 }
 
+// inOrder fails the test unless every string of order appears in got, in that
+// order.
+func inOrder(t *testing.T, got string, order []string) {
+	t.Helper()
+	at := 0
+	for _, want := range order {
+		i := strings.Index(got[at:]+"\n", want)
+		if i < 0 {
+			t.Fatalf("%q missing, or out of order, in:\n%s", want, got)
+		}
+		at += i
+	}
+}
+
 func calls(fake *fakedocker.Fake) string {
 	var lines []string
 	for _, c := range fake.Calls() {
@@ -255,14 +269,7 @@ func TestRestore(t *testing.T) {
 	// In order: the database alone, its import, then everything, then hooks.
 	order := []string{"up -d --wait --wait-timeout 600 db", "exec -T db sh -c exec psql", "up -d --wait --wait-timeout 600\n",
 		"exec -T -u www-data app sh -c echo restored", "rm -rf /kit/db"}
-	at := 0
-	for _, want := range order {
-		i := strings.Index(got[at:]+"\n", want)
-		if i < 0 {
-			t.Fatalf("%q missing, or out of order, in:\n%s", want, got)
-		}
-		at += i
-	}
+	inOrder(t, got, order)
 	for _, c := range fake.Calls() {
 		if strings.Contains(c.Line(), "exec psql") && c.Stdin != dump {
 			t.Errorf("the dump is not fed to psql: %q", c.Stdin)
@@ -419,5 +426,55 @@ func TestRunningImageNeedsARegistryDigest(t *testing.T) {
 	fake.Reply("{{json .RepoDigests}}", "[]", "", 0)
 	if err := Backup(testRepo, dir); err == nil || !strings.Contains(err.Error(), "no registry digest") {
 		t.Errorf("a locally built image: %v", err)
+	}
+}
+
+func TestCopyStopsAtTheFirstFailure(t *testing.T) {
+	dst := restic.Repo{Location: "s3:https://s3.example/own/app", Password: "own"}
+	for _, failing := range []string{" init ", " key add ", " copy --tag ", " snapshots "} {
+		fake := fakedocker.Install(t)
+		fake.Reply(failing, "", "refused", 1)
+		if err := Copy(testRepo, dst, true, "key"); err == nil {
+			t.Errorf("%s failing: copy reported as done", failing)
+		}
+	}
+}
+
+func TestVerifyCleansUpAfterAFailure(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	fake := fakedocker.Install(t)
+	fake.Reply(" snapshots ", "[]", "", 0)
+	if err := Verify(testRepo, "latest", false); err == nil {
+		t.Fatal("an empty repository verified")
+	}
+	if !strings.Contains(calls(fake), "down --volumes --remove-orphans") {
+		t.Errorf("the test instance is left behind:\n%s", calls(fake))
+	}
+
+	fake = fakedocker.Install(t)
+	fake.Reply(" snapshots ", "[]", "", 0)
+	fake.Reply("rm -rf /kit/*", "", "busy", 1)
+	if err := Verify(testRepo, "latest", false); err == nil {
+		t.Error("a failed cleanup hidden")
+	}
+}
+
+func TestBackupFailures(t *testing.T) {
+	for name, failing := range map[string]string{
+		"the recipe": " config", "pre_backup": "maintenance on", "the version": "{{index .Config.Labels", "restic": " backup --tag ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			fake := fakedocker.Install(t)
+			if failing != " config" {
+				fake.Reply(" config", config(dir, false), "", 0)
+			}
+			fake.Reply(failing, "", "refused", 1)
+			fake.Reply(" ps -q ", "cid\n", "", 0)
+			fake.Reply("{{json .RepoDigests}}", `["demo/app@sha256:aa","postgres@sha256:bb"]`, "", 0)
+			if err := Backup(testRepo, dir); err == nil {
+				t.Errorf("%s failing: backup reported as done", name)
+			}
+		})
 	}
 }
