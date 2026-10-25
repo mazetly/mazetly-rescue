@@ -4,7 +4,7 @@
 # variables: on restore, the image must not try to install over the config.
 services:
   db:
-    image: mariadb:11.4
+    image: mariadb:13.0
     restart: unless-stopped
     command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
     env_file: .env
