@@ -221,6 +221,7 @@ customer key only, checked, then upgraded, on every change.
 | [Healthchecks](apps/healthchecks) | PostgreSQL | user, a check, its ping URL and history | v4.4 → v5.0 |
 | [Activepieces](apps/activepieces) | PostgreSQL | sign-in, a flow, a variable encrypted with `AP_ENCRYPTION_KEY` | 0.92.2 → 0.92.3 |
 | [Nextcloud](apps/nextcloud) | MariaDB | account, a file over WebDAV, backup in maintenance mode | 32 → 33 |
+| [Vaultwarden](apps/vaultwarden) | SQLite | invited account, a password and an attachment decrypted with the master password | 1.36 → 1.37 |
 
 What they taught the format:
 
@@ -234,6 +235,10 @@ What they taught the format:
 - **Nextcloud**: hooks run around the backup (maintenance mode); after an
   upgrade, `post_restore` must not run (it would make every sync client resync),
   hence `post_upgrade`.
+- **Vaultwarden**: the database is not enough: attachments, sends and the
+  token signing key are files beside it in the data folder, backed up with it.
+  The test encrypts like a Bitwarden client and decrypts after the restore, so
+  the vault is proven readable, not just present.
 
 ## Target environment
 
