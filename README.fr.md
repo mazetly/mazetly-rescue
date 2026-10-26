@@ -53,6 +53,7 @@ l'outil), vérifiée, puis mise à jour.
 | Healthchecks | PostgreSQL | [apps/healthchecks](apps/healthchecks) |
 | Activepieces | PostgreSQL | [apps/activepieces](apps/activepieces) |
 | Nextcloud | MariaDB | [apps/nextcloud](apps/nextcloud) |
+| Vaultwarden | SQLite | [apps/vaultwarden](apps/vaultwarden) |
 
 ## Licence
 

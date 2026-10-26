@@ -1,0 +1,28 @@
+# Vaultwarden recipe. Everything it keeps lives in /data: the SQLite database,
+# rsa_key.pem (signs login tokens), attachments/, sends/ and config.json
+# (settings saved from the admin page). Vaults are encrypted on the users'
+# devices: the server, and this backup, only ever hold ciphertext.
+services:
+  vaultwarden:
+    image: vaultwarden/server:1.37.4
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Accounts come from invitations sent from the admin page, never from
+      # open sign-up.
+      SIGNUPS_ALLOWED: "false"
+      INVITATIONS_ALLOWED: "true"
+    ports:
+      - "${RESCUE_PORT:-8080}:80"
+    volumes:
+      - ./volumes/data:/data
+    x-mazetly:
+      database:
+        engine: sqlite
+        path: /data/db.sqlite3
+
+x-mazetly:
+  app: vaultwarden
+  version:
+    service: vaultwarden
+    label: org.opencontainers.image.version
