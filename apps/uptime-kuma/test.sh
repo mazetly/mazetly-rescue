@@ -2,7 +2,6 @@
 
 READY_PATH=/
 BACKUP_IMAGES=(kuma=louislam/uptime-kuma:2.0.0)
-UPGRADE=(kuma=louislam/uptime-kuma:2)
 
 prepare() {
 	mkdir -p "$kit/volumes/data"

@@ -3,7 +3,6 @@
 READY_PATH=/accounts/login/
 # Backed up on the previous major release, restored as is, then upgraded.
 BACKUP_IMAGES=(web=healthchecks/healthchecks:v4.4)
-UPGRADE=(web=healthchecks/healthchecks:v5.0)
 
 prepare() {
 	cat >"$kit/.env" <<-EOF

@@ -3,7 +3,6 @@
 READY_PATH=/index.php
 # Backed up on an older release, restored as is, then upgraded.
 BACKUP_IMAGES=(app=matomo:5.13.0-apache)
-UPGRADE=(app=matomo:5-apache)
 
 PLUGIN=QueuedTracking
 LOGO_B64=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
