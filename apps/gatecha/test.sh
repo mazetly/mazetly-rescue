@@ -1,6 +1,9 @@
 # GateCHA round-trip test: sourced by test/roundtrip.sh.
 
 READY_PATH=/healthz
+# Backed up under the image's former name, which stopped at 0.13.3, then
+# upgraded to the recipe's ghcr.io/gatecha-org/gatecha: the move a customer
+# on an older backup has to make.
 BACKUP_IMAGES=(gatecha=ghcr.io/upellift99/gatecha:0.12.1)
 
 # What the restore must find again, written next to the kit's data at seed
