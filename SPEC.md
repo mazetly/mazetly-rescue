@@ -220,7 +220,7 @@ customer key only, checked, then upgraded, on every change.
 | [Uptime Kuma](apps/uptime-kuma) | SQLite | admin login, a monitor | 2.0.0 → 2.x |
 | [Healthchecks](apps/healthchecks) | PostgreSQL | user, a check, its ping URL and history | v4.4 → v5.0 |
 | [Activepieces](apps/activepieces) | PostgreSQL | sign-in, a flow, a variable encrypted with `AP_ENCRYPTION_KEY` | 0.92.2 → 0.92.3 |
-| [Nextcloud](apps/nextcloud) | MariaDB | account, a file over WebDAV, backup in maintenance mode | 33 → 34 |
+| [Nextcloud](apps/nextcloud) | MariaDB | account, a file over WebDAV, backup in maintenance mode | 34 → 35 |
 | [Vaultwarden](apps/vaultwarden) | SQLite | invited account, a password and an attachment decrypted with the master password | 1.36 → 1.37 |
 
 What they taught the format:

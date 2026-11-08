@@ -19,7 +19,7 @@ services:
         engine: mariadb
 
   app:
-    image: nextcloud:34-apache
+    image: nextcloud:35-apache
     restart: unless-stopped
     env_file: .env
     environment:
