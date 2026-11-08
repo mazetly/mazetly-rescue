@@ -234,7 +234,7 @@ neuve avec la seule clé client, vérifiée, puis mise à jour, à chaque modifi
 | [Uptime Kuma](apps/uptime-kuma) | SQLite | connexion admin, une sonde | 2.0.0 → 2.x |
 | [Healthchecks](apps/healthchecks) | PostgreSQL | utilisateur, un check, son URL de ping et son historique | v4.4 → v5.0 |
 | [Activepieces](apps/activepieces) | PostgreSQL | connexion, un flow, une variable chiffrée avec `AP_ENCRYPTION_KEY` | 0.92.2 → 0.92.3 |
-| [Nextcloud](apps/nextcloud) | MariaDB | compte, un fichier via WebDAV, sauvegarde en mode maintenance | 32 → 33 |
+| [Nextcloud](apps/nextcloud) | MariaDB | compte, un fichier via WebDAV, sauvegarde en mode maintenance | 33 → 34 |
 | [Vaultwarden](apps/vaultwarden) | SQLite | compte invité, un mot de passe et une pièce jointe déchiffrés avec le mot de passe maître | 1.36 → 1.37 |
 
 Ce qu'elles ont appris au format :
