@@ -2,7 +2,6 @@
 
 READY_PATH=/alive
 BACKUP_IMAGES=(vaultwarden=vaultwarden/server:1.36.0)
-UPGRADE=(vaultwarden=vaultwarden/server:1.37.4)
 
 # What the restore must find again, written next to the kit's data at seed
 # time. Test-only: a real kit has no such file.

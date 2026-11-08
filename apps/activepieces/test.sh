@@ -2,7 +2,6 @@
 
 READY_PATH=/api/v1/flags
 BACKUP_IMAGES=(app=ghcr.io/activepieces/activepieces:0.92.2)
-UPGRADE=(app=ghcr.io/activepieces/activepieces:0.92.3)
 
 SECRET=rescue-ci-secret-value
 

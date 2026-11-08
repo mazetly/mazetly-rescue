@@ -105,6 +105,12 @@ set_image() {
 	CONFIG=$(config)
 }
 
+# The image a service has in the recipe, apps/<app>/compose.yaml: the one
+# Dependabot bumps, and the target of the upgrade step.
+recipe_image() {
+	docker run --rm -i "$YQ_IMAGE" -r ".services.\"$1\".image" <"$ROOT/apps/$app/compose.yaml"
+}
+
 seed_app() {
 	[ ! -e "$kit" ] || die "$kit already exists"
 	mkdir -p "$kit"
@@ -112,7 +118,12 @@ seed_app() {
 	prepare
 	CONFIG=$(config)
 	local pair
-	for pair in "${BACKUP_IMAGES[@]}"; do set_image "${pair%%=*}" "${pair#*=}"; done
+	for pair in "${BACKUP_IMAGES[@]}"; do
+		# Backing up on the recipe's own image would leave nothing to upgrade to.
+		[ "${pair#*=}" != "$(recipe_image "${pair%%=*}")" ] ||
+			die "${pair%%=*}: back up on an older release than the recipe's ${pair#*=}"
+		set_image "${pair%%=*}" "${pair#*=}"
+	done
 
 	log "Reference $app"
 	compose up -d --wait --wait-timeout 600
@@ -198,12 +209,12 @@ restore_manual() {
 	check
 	echo "$app $actual restored by hand with the customer key only."
 
-	[ "${#UPGRADE[@]}" -gt 0 ] || return 0
-	log "Upgrade, following NOTES.md"
+	[ "${#BACKUP_IMAGES[@]}" -gt 0 ] || return 0
+	log "Upgrade to the recipe's images, following NOTES.md"
 	local pair renew upgraded
-	for pair in "${UPGRADE[@]}"; do
+	for pair in "${BACKUP_IMAGES[@]}"; do
 		service=${pair%%=*}
-		set_image "$service" "${pair#*=}"
+		set_image "$service" "$(recipe_image "$service")"
 		renew=$(jq -r --arg s "$service" '.services[$s]."x-mazetly".upgrade.renew_anon_volumes // false' <<<"$CONFIG")
 		compose up -d --wait --wait-timeout 600 $([ "$renew" = true ] && echo --renew-anon-volumes) "$service"
 	done
@@ -231,7 +242,10 @@ restore_tool() {
 	echo "$app $(version) restored by mazetly-rescue with the customer key only."
 }
 
-UPGRADE=()
+# apps/<app>/test.sh sets BACKUP_IMAGES, service=image pairs: the older release
+# the reference instance is backed up on. The manual restore then upgrades those
+# services to the recipe's images, so bumping an image in compose.yaml tests
+# the upgrade to that very image.
 BACKUP_IMAGES=()
 # shellcheck source=/dev/null
 . "$ROOT/apps/$app/test.sh"

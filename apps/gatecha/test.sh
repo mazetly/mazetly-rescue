@@ -2,7 +2,6 @@
 
 READY_PATH=/healthz
 BACKUP_IMAGES=(gatecha=ghcr.io/upellift99/gatecha:0.12.1)
-UPGRADE=(gatecha=ghcr.io/upellift99/gatecha:0.13.0)
 
 # What the restore must find again, written next to the kit's data at seed
 # time. Test-only: a real kit has no such file.
