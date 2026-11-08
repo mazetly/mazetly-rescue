@@ -2,7 +2,7 @@
 
 READY_PATH=/status.php
 # Backed up on the previous major release, restored as is, then upgraded.
-BACKUP_IMAGES=(app=nextcloud:32-apache)
+BACKUP_IMAGES=(app=nextcloud:33-apache)
 
 CONTENT="Rescue CI: this file must come back."
 
