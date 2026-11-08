@@ -4,6 +4,9 @@
   HMAC secrets of the API keys are in the database: the sites using this
   instance keep working without any change.
 - **Upgrade**: change the image in `compose.yaml`, then `docker compose up -d`.
-  The database schema is migrated on start.
+  The database schema is migrated on start. The image moved from
+  `ghcr.io/upellift99/gatecha` (last release 0.13.3) to
+  `ghcr.io/gatecha-org/gatecha` (0.13.4 and later): a backup restored on the
+  former name upgrades by changing the image name as well as the tag.
 - **New domain**: nothing to change in GateCHA; update the sites' widget URL.
   Behind a reverse proxy, set `GATECHA_TRUST_PROXY=true` in `.env`.
