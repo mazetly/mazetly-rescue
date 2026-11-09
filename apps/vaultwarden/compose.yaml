@@ -4,7 +4,7 @@
 # devices: the server, and this backup, only ever hold ciphertext.
 services:
   vaultwarden:
-    image: vaultwarden/server:1.37.4
+    image: vaultwarden/server:1.37.5
     restart: unless-stopped
     env_file: .env
     environment:
